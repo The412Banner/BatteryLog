@@ -16,6 +16,7 @@ import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -34,12 +35,16 @@ class MainActivity : AppCompatActivity() {
     private lateinit var report: TextView
     private lateinit var autoBtn: Button
     private lateinit var moduleStatus: TextView
+    private lateinit var estimates: TextView
+    private lateinit var chargeCtl: TextView
+    private var speedBar: SeekBar? = null
+    @Volatile private var estimating = false
 
     private var expanded = false
     private var lastReport = ""
     private val ui = Handler(Looper.getMainLooper())
     private val ticker = object : Runnable {
-        override fun run() { refreshCard(); refreshStatus(); ui.postDelayed(this, 2_000) }
+        override fun run() { refreshCard(); refreshStatus(); refreshEstimates(); ui.postDelayed(this, 2_000) }
     }
 
     private val notifPerm = registerForActivityResult(
@@ -62,6 +67,7 @@ class MainActivity : AppCompatActivity() {
         })
 
         root.addView(buildBatteryCard())
+        root.addView(buildEstimatesCard())
 
         status = TextView(this).apply {
             textSize = 12f
@@ -82,6 +88,9 @@ class MainActivity : AppCompatActivity() {
         root.addView(label("Boot persistence (Magisk, root)"))
         root.addView(button("Install boot module") { installModule() })
         root.addView(button("Remove boot module") { removeModule() })
+
+        root.addView(divider())
+        root.addView(buildChargeControl())
 
         report = TextView(this).apply {
             typeface = Typeface.MONOSPACE
@@ -229,8 +238,142 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    override fun onResume() { super.onResume(); ui.post(ticker); refreshModuleStatus() }
+    override fun onResume() {
+        super.onResume(); ui.post(ticker); refreshModuleStatus(); refreshChargeControl()
+    }
     override fun onPause() { super.onPause(); ui.removeCallbacks(ticker) }
+
+    // ---- estimates card ----
+    private fun buildEstimatesCard(): View {
+        val inner = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(14), dp(18), dp(14))
+        }
+        inner.addView(TextView(this).apply {
+            text = "⏱  Estimates"; textSize = 15f; setTypeface(typeface, Typeface.BOLD)
+        })
+        estimates = TextView(this).apply {
+            textSize = 13f; setPadding(0, dp(6), 0, 0); text = "Calculating…"
+            setTextIsSelectable(true)
+        }
+        inner.addView(estimates)
+        return MaterialCardView(this).apply {
+            radius = dp(14).toFloat(); cardElevation = dp(2).toFloat(); useCompatPadding = true
+            addView(inner)
+        }
+    }
+
+    private fun refreshEstimates() {
+        if (estimating) return
+        estimating = true
+        Thread {
+            val r = Estimates.compute(this)
+            val txt = buildString {
+                if (r.charging) {
+                    append("Charging — to 100% from ${r.capacity}%\n")
+                    append("• Now (gauge): ~${Estimates.fmtMin(r.toFullMin)}")
+                    if (r.learnedToFullMin != null)
+                        append("    • Your avg: ~${Estimates.fmtMin(r.learnedToFullMin)}")
+                } else {
+                    append("On battery — ${r.capacity}%\n")
+                    append("• Time remaining (gauge): ~${Estimates.fmtMin(r.toEmptyMin)}")
+                    if (r.learnedRemainingMin != null)
+                        append("    • Your avg: ~${Estimates.fmtMin(r.learnedRemainingMin)}")
+                    append("\n• Full charge lasts: ~${Estimates.fmtMin(r.learnedFullRuntimeMin)}")
+                    if (r.learnedFullRuntimeMin == null) append("  (needs a fuller run)")
+                }
+                append("\nlearned from ${r.dischRuns} discharge / ${r.chgRuns} charge runs")
+            }
+            runOnUiThread { estimates.text = txt }
+            estimating = false
+        }.start()
+    }
+
+    // ---- charge control card ----
+    private fun buildChargeControl(): View {
+        val inner = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+        }
+        inner.addView(TextView(this).apply {
+            text = "🔋  Charge control (root)"; textSize = 15f; setTypeface(typeface, Typeface.BOLD)
+        })
+        chargeCtl = TextView(this).apply {
+            textSize = 12f; setPadding(0, dp(4), 0, dp(8)); text = "reading…"; setTextColor(Color.GRAY)
+        }
+        inner.addView(chargeCtl)
+
+        inner.addView(TextView(this).apply {
+            text = "Charge speed  (0 = full speed, higher = slower / cooler)"
+            textSize = 12f
+        })
+        speedBar = SeekBar(this).apply {
+            max = 11
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) {}
+                override fun onStartTrackingTouch(sb: SeekBar?) {}
+                override fun onStopTrackingTouch(sb: SeekBar?) { applyChargeSpeed(sb?.progress ?: 0) }
+            })
+        }
+        inner.addView(speedBar)
+
+        inner.addView(TextView(this).apply {
+            text = "Charge limit  (stop charging at)"
+            textSize = 12f; setPadding(0, dp(8), 0, dp(2))
+        })
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        listOf(100 to "100% (off)", 90 to "90%", 80 to "80%").forEach { (pct, lbl) ->
+            row.addView(Button(this).apply {
+                text = lbl; isAllCaps = false
+                layoutParams = LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f)
+                setOnClickListener { applyChargeLimit(pct) }
+            })
+        }
+        inner.addView(row)
+
+        inner.addView(TextView(this).apply {
+            text = "Enforcement depends on the charger firmware; each change is read back to confirm it stuck."
+            textSize = 10f; setTextColor(Color.parseColor("#9E9E9E")); setPadding(0, dp(6), 0, 0)
+        })
+
+        return MaterialCardView(this).apply {
+            radius = dp(14).toFloat(); cardElevation = dp(2).toFloat(); useCompatPadding = true
+            addView(inner)
+        }
+    }
+
+    private fun refreshChargeControl() = Thread {
+        val s = ChargeControl.read()
+        runOnUiThread {
+            if (!s.supported) {
+                chargeCtl.text = "Not supported on this device (no charge-control nodes)."
+                chargeCtl.setTextColor(Color.GRAY)
+                return@runOnUiThread
+            }
+            chargeCtl.text = "Speed level ${s.speedLevel ?: "?"}/${s.speedMax ?: "?"}    •    " +
+                "Limit ${s.startThreshold ?: "?"}–${s.endThreshold ?: "?"}%"
+            chargeCtl.setTextColor(Color.parseColor("#BDBDBD"))
+            s.speedMax?.let { speedBar?.max = it }
+            s.speedLevel?.let { speedBar?.progress = it }
+        }
+    }.start()
+
+    private fun applyChargeSpeed(level: Int) = Thread {
+        if (!RootHelper.hasRoot()) { uiToast("No root (su) — charge control needs root."); return@Thread }
+        val ok = ChargeControl.setSpeed(level)
+        uiToast(if (ok) "Charge speed set to level $level." else "Write didn't stick — firmware may override.")
+        runOnUiThread { refreshChargeControl() }
+    }.start()
+
+    private fun applyChargeLimit(pct: Int) = Thread {
+        if (!RootHelper.hasRoot()) { uiToast("No root (su) — charge control needs root."); return@Thread }
+        val ok = ChargeControl.setLimit(pct)
+        uiToast(
+            if (ok) (if (pct >= 100) "Charge limit off (charges to 100%)." else "Charge limit set to $pct%.")
+            else "Write didn't stick — firmware may override."
+        )
+        runOnUiThread { refreshChargeControl() }
+    }.start()
 
     /** Verifies the Magisk boot module is installed AND its sampler is alive (needs root). */
     private fun refreshModuleStatus() {
