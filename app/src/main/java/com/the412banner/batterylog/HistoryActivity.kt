@@ -36,10 +36,19 @@ class HistoryActivity : AppCompatActivity() {
         }
 
         root.addView(TextView(this).apply {
-            text = "Battery Cycles Recorded"
+            text = "Battery History"
             textSize = 22f
             setTypeface(typeface, Typeface.BOLD)
             setPadding(0, 0, 0, dp(12))
+        })
+
+        // ---- Lifetime card (whole-life fuel-gauge data, since manufacture) ----
+        root.addView(lifetimeCard())
+
+        root.addView(TextView(this).apply {
+            text = "Recorded runs (this app, since install)"
+            textSize = 13f; setTypeface(typeface, Typeface.BOLD)
+            setPadding(dp(4), dp(8), 0, dp(8))
         })
 
         graph = GraphView(this)
@@ -147,6 +156,58 @@ class HistoryActivity : AppCompatActivity() {
         if (durH > 0 && b.cap != a.cap)
             ln("Rate      : ${"%.1f".format(abs(b.cap - a.cap) / durH)} %/hr")
         return sb.toString()
+    }
+
+    // ---- Lifetime card ----
+    private fun lifetimeCard(): View {
+        val inner = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(16), dp(18), dp(16))
+        }
+        inner.addView(TextView(this).apply {
+            text = "Lifetime — Battery Health"
+            textSize = 16f; setTypeface(typeface, Typeface.BOLD)
+        })
+        inner.addView(TextView(this).apply {
+            text = "Maintained by the device since the battery was manufactured."
+            textSize = 11f; setTextColor(Color.parseColor("#9E9E9E"))
+            setPadding(0, dp(2), 0, dp(10))
+        })
+        val body = TextView(this).apply {
+            typeface = Typeface.MONOSPACE; textSize = 13f
+            setTextIsSelectable(true)
+            text = "Reading fuel gauge…"
+        }
+        inner.addView(body)
+
+        // Off the UI thread — read() may consult `su`.
+        Thread {
+            val s = LifetimeStats.read()
+            val txt = if (!s.anyData) "Fuel-gauge data unavailable on this device." else buildString {
+                fun ln(k: String, v: String) = append(k.padEnd(20, ' ')).append(v).append('\n')
+                s.cycleCount?.let { ln("Charge cycles", "$it   (since manufacture)") }
+                val f = s.fullMah; val d = s.designMah
+                if (f != null) ln("Full capacity now", "$f mAh")
+                if (d != null) ln("Design capacity", "$d mAh")
+                s.sohPct?.let { ln("State of health", "%.1f %%".format(it)) }
+                s.lostMah?.let { lost ->
+                    val pct = if (d != null && d > 0) " (%.0f%%)".format(lost.toDouble() / d * 100) else ""
+                    ln("Capacity lost", "$lost mAh$pct")
+                }
+                s.technology?.let { ln("Technology", it) }
+                s.model?.let { ln("Model", it) }
+                s.ocvMv?.let { ln("Open-circuit V", "%.3f V".format(it / 1000.0)) }
+                s.vmaxMv?.let { ln("Voltage max", "%.3f V".format(it / 1000.0)) }
+                s.tempC?.let { ln("Temperature", "%.1f °C".format(it)) }
+                if (s.usedRoot) append("\n(read via root)")
+            }
+            runOnUiThread { body.text = txt.trimEnd() }
+        }.start()
+
+        return MaterialCardView(this).apply {
+            radius = dp(14).toFloat(); cardElevation = dp(2).toFloat(); useCompatPadding = true
+            addView(inner)
+        }
     }
 
     // helpers

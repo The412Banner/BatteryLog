@@ -32,6 +32,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var expandHint: TextView
     private lateinit var status: TextView
     private lateinit var report: TextView
+    private lateinit var autoBtn: Button
 
     private var expanded = false
     private var lastReport = ""
@@ -67,7 +68,9 @@ class MainActivity : AppCompatActivity() {
         }
         root.addView(status)
 
-        root.addView(button("▶  Start monitoring") { start() })
+        autoBtn = button("🔌  Auto: start on unplug / stop on plug") { toggleAuto() }
+        root.addView(autoBtn)
+        root.addView(button("▶  Start monitoring (manual)") { start() })
         root.addView(button("■  Stop monitoring") { stop() })
         root.addView(button("📄  Generate report") { makeReport() })
         root.addView(button("↗  Share report") { shareReport() })
@@ -170,12 +173,47 @@ class MainActivity : AppCompatActivity() {
     // ---- monitoring status ----
     private fun refreshStatus() {
         val running = BatteryLogService.running
-        val path = BatteryLogService.currentLogPath ?: "(none yet)"
+        val armed = BatteryLogService.autoArmed
+
+        autoBtn.text = if (armed) "🔌  Auto: ARMED — tap to disarm"
+                       else "🔌  Auto: start on unplug / stop on plug"
+
         status.text = buildString {
-            append(if (running) "● MONITORING — sampling every 30s\n" else "○ Idle — not logging\n")
-            append("Current log: $path")
+            when {
+                running && armed -> append("● AUTO — recording discharge (every 30s)\n")
+                running          -> append("● MONITORING — sampling every 30s\n")
+                armed            -> append("◉ AUTO-ARMED — logging starts when you unplug\n")
+                else             -> append("○ Idle — not logging\n")
+            }
+            if (running && BatteryLogService.currentLogPath != null) {
+                append("Current log: ${java.io.File(BatteryLogService.currentLogPath!!).name}")
+            } else {
+                // Don't claim "none" when the boot module or a past run left logs.
+                val latest = LogStore.latest(this@MainActivity)
+                append("Latest log on disk: ${latest?.name ?: "none"}")
+            }
         }
-        status.setTextColor(if (running) Color.parseColor("#66BB6A") else Color.GRAY)
+        status.setTextColor(
+            when {
+                running -> Color.parseColor("#66BB6A")   // green
+                armed   -> Color.parseColor("#4FC3F7")   // cyan
+                else    -> Color.GRAY
+            }
+        )
+    }
+
+    private fun toggleAuto() {
+        if (BatteryLogService.autoArmed) {
+            stop()
+            toast("Auto mode off.")
+        } else {
+            ContextCompat.startForegroundService(
+                this, Intent(this, BatteryLogService::class.java)
+                    .setAction(BatteryLogService.ACTION_START_AUTO)
+            )
+            toast("Auto armed — unplug to begin a clean discharge log.")
+            status.postDelayed({ refreshStatus() }, 600)
+        }
     }
 
     override fun onResume() { super.onResume(); ui.post(ticker) }

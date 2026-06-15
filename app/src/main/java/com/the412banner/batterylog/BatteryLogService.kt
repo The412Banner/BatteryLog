@@ -4,16 +4,17 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
-import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -26,6 +27,14 @@ import java.util.Locale
  *
  * Uses foregroundServiceType=specialUse (not dataSync) so Android 14 does NOT
  * impose its ~6h/day cap — a full 100%->0% discharge can take many hours.
+ *
+ * Two modes:
+ *  - MANUAL (default start): begins sampling immediately to a fresh CSV.
+ *  - AUTO  (ACTION_START_AUTO): the service stays resident and watches the
+ *    charger. The instant you UNPLUG it opens a fresh discharge-only log; when
+ *    you PLUG BACK IN it finalises that log and waits for the next unplug. This
+ *    avoids Android 14's "can't start an FGS from a background broadcast" limit
+ *    because the service is already alive and reacts to the plug event itself.
  */
 class BatteryLogService : Service() {
 
@@ -34,13 +43,18 @@ class BatteryLogService : Service() {
         const val CHANNEL_ID = "batterylog"
         const val NOTIF_ID = 1
         const val ACTION_STOP = "com.the412banner.batterylog.STOP"
+        const val ACTION_START_AUTO = "com.the412banner.batterylog.START_AUTO"
 
         /** Header written as the first line of every CSV. */
         const val CSV_HEADER =
             "epoch_ms,iso_time,uptime_ms,capacity_pct,status,plugged," +
             "voltage_mV,current_uA,charge_counter_uAh,energy_counter_nWh,temp_decideg,health"
 
+        /** True while actively sampling rows to a file. */
         @Volatile var running = false
+            private set
+        /** True while Auto mode is engaged (start-on-unplug / stop-on-plug). */
+        @Volatile var autoArmed = false
             private set
         @Volatile var currentLogPath: String? = null
             private set
@@ -55,11 +69,30 @@ class BatteryLogService : Service() {
     private lateinit var handler: Handler
     private var wakeLock: PowerManager.WakeLock? = null
     private var logFile: File? = null
+    private var foregroundStarted = false
+    private var powerRegistered = false
 
     private val sampler = object : Runnable {
         override fun run() {
             sampleOnce()
             handler.postDelayed(this, SAMPLE_INTERVAL_MS)
+        }
+    }
+
+    /** Reacts to charger plug/unplug while Auto mode is armed. */
+    private val powerReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (!autoArmed) return
+            when (intent?.action) {
+                Intent.ACTION_POWER_DISCONNECTED -> handler.post {
+                    startLogging()
+                    updateNotification("Auto — recording discharge")
+                }
+                Intent.ACTION_POWER_CONNECTED -> handler.post {
+                    stopLogging()
+                    updateNotification("Auto-armed — waiting for unplug")
+                }
+            }
         }
     }
 
@@ -72,14 +105,59 @@ class BatteryLogService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
-            stopSelf()
-            return START_NOT_STICKY
+        when (intent?.action) {
+            ACTION_STOP -> {
+                fullStop()
+                return START_NOT_STICKY
+            }
+            ACTION_START_AUTO -> {
+                startAuto()
+                return START_STICKY
+            }
+            else -> {
+                startManual()
+                return START_STICKY
+            }
         }
-        if (running) return START_STICKY
+    }
 
-        // Partial wakelock keeps the CPU alive so the 30s sampler keeps firing
-        // even with the screen off / during doze; otherwise we'd get gaps.
+    // ---- mode entry points ----
+
+    private fun startManual() {
+        autoArmed = false
+        unregisterPower()
+        ensureForeground("starting…")
+        startLogging()
+    }
+
+    private fun startAuto() {
+        autoArmed = true
+        ensureForeground("Auto-armed — waiting for unplug")
+        registerPower()
+        // Engage immediately if we're already running on battery.
+        if (isUnplugged()) {
+            startLogging()
+            updateNotification("Auto — recording discharge")
+        } else {
+            stopLogging()
+            updateNotification("Auto-armed — waiting for unplug")
+        }
+    }
+
+    private fun fullStop() {
+        autoArmed = false
+        unregisterPower()
+        stopLogging()
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        foregroundStarted = false
+        stopSelf()
+    }
+
+    // ---- logging lifecycle ----
+
+    private fun startLogging() {
+        if (running) return
+
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "BatteryLog::sampler").apply {
             setReferenceCounted(false)
@@ -93,10 +171,16 @@ class BatteryLogService : Service() {
         }
 
         running = true
-        startForeground(NOTIF_ID, buildNotification("starting…"))
         sampleOnce()
         handler.postDelayed(sampler, SAMPLE_INTERVAL_MS)
-        return START_STICKY
+    }
+
+    private fun stopLogging() {
+        handler.removeCallbacks(sampler)
+        running = false
+        logFile = null
+        runCatching { wakeLock?.release() }
+        wakeLock = null
     }
 
     private fun sampleOnce() {
@@ -131,8 +215,36 @@ class BatteryLogService : Service() {
 
         // Auto-stop when fully drained so the run ends cleanly at 0%.
         if (capacity in 0..0 && statusInt != BatteryManager.BATTERY_STATUS_CHARGING) {
-            stopSelf()
+            if (autoArmed) {
+                stopLogging()
+                updateNotification("Auto-armed — waiting for unplug")
+            } else {
+                fullStop()
+            }
         }
+    }
+
+    // ---- power receiver registration ----
+
+    private fun registerPower() {
+        if (powerRegistered) return
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_POWER_CONNECTED)
+            addAction(Intent.ACTION_POWER_DISCONNECTED)
+        }
+        ContextCompat.registerReceiver(this, powerReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        powerRegistered = true
+    }
+
+    private fun unregisterPower() {
+        if (!powerRegistered) return
+        runCatching { unregisterReceiver(powerReceiver) }
+        powerRegistered = false
+    }
+
+    private fun isUnplugged(): Boolean {
+        val sticky = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        return (sticky?.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1) ?: -1) == 0
     }
 
     private fun statusName(s: Int) = when (s) {
@@ -167,15 +279,25 @@ class BatteryLogService : Service() {
         nm.createNotificationChannel(ch)
     }
 
+    private fun ensureForeground(text: String) {
+        if (!foregroundStarted) {
+            startForeground(NOTIF_ID, buildNotification(text))
+            foregroundStarted = true
+        } else {
+            updateNotification(text)
+        }
+    }
+
     private fun buildNotification(text: String): Notification {
         val stopIntent = Intent(this, BatteryLogService::class.java).setAction(ACTION_STOP)
         val stopPi = android.app.PendingIntent.getService(
             this, 0, stopIntent,
             android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
         )
+        val title = if (autoArmed) "BatteryLog — Auto mode" else "BatteryLog running"
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
-            .setContentTitle("BatteryLog running")
+            .setContentTitle(title)
             .setContentText(text)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -189,10 +311,9 @@ class BatteryLogService : Service() {
     }
 
     override fun onDestroy() {
-        running = false
-        handler.removeCallbacks(sampler)
-        runCatching { wakeLock?.release() }
-        wakeLock = null
+        unregisterPower()
+        stopLogging()
+        autoArmed = false
         thread.quitSafely()
         super.onDestroy()
     }

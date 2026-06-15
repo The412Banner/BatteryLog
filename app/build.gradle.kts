@@ -11,14 +11,27 @@ android {
         applicationId = "com.the412banner.batterylog"
         minSdk = 29
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.2.0"
+    }
+
+    signingConfigs {
+        // Stable debug key (committed) so updates install over the top and
+        // PRESERVE collected logs — a fresh CI keystore each build would force
+        // an uninstall and wipe the app's external log dir.
+        create("debugStable") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
             isDebuggable = true
+            signingConfig = signingConfigs.getByName("debugStable")
         }
         release {
             isMinifyEnabled = false

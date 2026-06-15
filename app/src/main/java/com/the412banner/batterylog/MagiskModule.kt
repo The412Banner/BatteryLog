@@ -33,7 +33,7 @@ object MagiskModule {
             echo "__HEADER__" > "__D__F"
             sync
             while true; do
-              ms=__D__((__D__(date +%s)*1000))
+              ms="__D__(date +%s)000"
               iso=__D__(date +%Y-%m-%dT%H:%M:%S)
               up=__D__(awk '{printf "%d",__D__1*1000}' /proc/uptime 2>/dev/null)
               cap=__D__(cat __D__B/capacity 2>/dev/null)
