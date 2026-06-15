@@ -38,8 +38,11 @@ jobs:
           mkdir -p out
           BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort | tail -1)
           "$BT/zipalign" -p -f 4 app/build/outputs/apk/debug/app-debug.apk out/aligned.apk
+          # --min-sdk-version 21 forces apksigner to embed all three blocks;
+          # without it, minSdk 29 makes it emit v3 only (v1/v2 deemed unnecessary).
           "$BT/apksigner" sign \
             --key app/testkey.pk8 --cert app/testkey.x509.pem \
+            --min-sdk-version 21 \
             --v1-signing-enabled true \
             --v2-signing-enabled true \
             --v3-signing-enabled true \
