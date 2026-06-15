@@ -10,7 +10,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** Simple line chart: battery % over time, with a secondary voltage trace. */
+/** Simple line chart: battery % over time, with secondary voltage and temperature traces. */
 class GraphView(ctx: Context) : View(ctx) {
 
     private var samples: List<Sample> = emptyList()
@@ -30,6 +30,13 @@ class GraphView(ctx: Context) : View(ctx) {
     private val voltLine = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#FFB74D"); strokeWidth = 2.5f; style = Paint.Style.STROKE
     }
+    private val tempLine = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#E57373"); strokeWidth = 2.5f; style = Paint.Style.STROKE
+    }
+
+    private val pctColor = Color.parseColor("#4FC3F7")
+    private val voltColor = Color.parseColor("#FFB74D")
+    private val tempColor = Color.parseColor("#E57373")
 
     fun setData(s: List<Sample>) { samples = s; invalidate() }
 
@@ -67,6 +74,7 @@ class GraphView(ctx: Context) : View(ctx) {
         c.drawPath(pPath, pctLine)
 
         // voltage path (right axis, auto-scaled)
+        var voltRange: String? = null
         val volts = samples.filter { it.vMv > 0 }
         if (volts.size >= 2) {
             val vMin = volts.minOf { it.vMv }
@@ -79,11 +87,49 @@ class GraphView(ctx: Context) : View(ctx) {
                 if (i == 0) vPath.moveTo(px, py) else vPath.lineTo(px, py)
             }
             c.drawPath(vPath, voltLine)
-            txt.color = Color.parseColor("#FFB74D")
+            txt.color = voltColor
             c.drawText("%.2fV".format(vMax / 1000.0), right + 4f, top + 20f, txt)
             c.drawText("%.2fV".format(vMin / 1000.0), right + 4f, bottom, txt)
             txt.color = Color.parseColor("#AAAAAA")
+            voltRange = "%.2f–%.2fV".format(vMin / 1000.0, vMax / 1000.0)
         }
+
+        // temperature path (own auto-scale; tempDecideg = tenths of °C)
+        var tempRange: String? = null
+        val temps = samples.filter { it.tempDecideg > 0 }
+        if (temps.size >= 2) {
+            val tMin = temps.minOf { it.tempDecideg }
+            val tMax = temps.maxOf { it.tempDecideg }
+            val tSpan = (tMax - tMin).coerceAtLeast(1)
+            val tPath = Path()
+            temps.forEachIndexed { i, s ->
+                val px = x(s.epoch)
+                val py = bottom - (s.tempDecideg - tMin).toFloat() / tSpan * h
+                if (i == 0) tPath.moveTo(px, py) else tPath.lineTo(px, py)
+            }
+            c.drawPath(tPath, tempLine)
+            txt.color = tempColor
+            c.drawText("%.1f°".format(tMax / 10.0), right + 4f, top + 56f, txt)
+            c.drawText("%.1f°".format(tMin / 10.0), right + 4f, bottom - 36f, txt)
+            txt.color = Color.parseColor("#AAAAAA")
+            tempRange = "%.1f–%.1f°C".format(tMin / 10.0, tMax / 10.0)
+        }
+
+        // legend (top-left, inside plot)
+        var lx = left + 14f
+        val ly = top + 26f
+        fun legend(color: Int, label: String) {
+            txt.color = color
+            c.drawText("●", lx, ly, txt)
+            lx += txt.measureText("●") + 4f
+            txt.color = Color.parseColor("#CCCCCC")
+            c.drawText(label, lx, ly, txt)
+            lx += txt.measureText(label) + 22f
+        }
+        legend(pctColor, "%")
+        voltRange?.let { legend(voltColor, it) }
+        tempRange?.let { legend(tempColor, it) }
+        txt.color = Color.parseColor("#AAAAAA")
 
         // X time labels
         val tf = SimpleDateFormat("HH:mm", Locale.US)
