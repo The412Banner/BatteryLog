@@ -1,0 +1,171 @@
+package com.the412banner.batterylog
+
+import android.graphics.Color
+import android.graphics.Typeface
+import android.os.Bundle
+import android.view.Gravity
+import android.view.View
+import android.view.ViewGroup.LayoutParams.MATCH_PARENT
+import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.card.MaterialCardView
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlin.math.abs
+
+class HistoryActivity : AppCompatActivity() {
+
+    private lateinit var graph: GraphView
+    private lateinit var detail: TextView
+    private lateinit var picker: LinearLayout
+    private var selected: File? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        title = "Battery cycles"
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+        }
+
+        root.addView(TextView(this).apply {
+            text = "Battery Cycles Recorded"
+            textSize = 22f
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(0, 0, 0, dp(12))
+        })
+
+        graph = GraphView(this)
+        root.addView(MaterialCardView(this).apply {
+            radius = dp(14).toFloat(); cardElevation = dp(2).toFloat(); useCompatPadding = true
+            addView(graph, LinearLayout.LayoutParams(MATCH_PARENT, dp(240)))
+        })
+        root.addView(legend())
+
+        detail = TextView(this).apply {
+            typeface = Typeface.MONOSPACE; textSize = 12f
+            setPadding(dp(4), dp(12), dp(4), dp(12)); setTextIsSelectable(true)
+        }
+        root.addView(detail)
+
+        root.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, dp(1))
+                .also { it.topMargin = dp(8); it.bottomMargin = dp(8) }
+            setBackgroundColor(Color.parseColor("#3A3A3A"))
+        })
+        root.addView(TextView(this).apply {
+            text = "Recorded runs (tap to view)"
+            textSize = 13f; setTypeface(typeface, Typeface.BOLD); setPadding(dp(4), 0, 0, dp(4))
+        })
+
+        picker = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        root.addView(picker)
+
+        setContentView(ScrollView(this).apply { addView(root) })
+        loadList()
+    }
+
+    override fun onResume() { super.onResume(); loadList() }
+
+    private fun loadList() {
+        val logs = LogStore.logs(this)
+        picker.removeAllViews()
+        if (logs.isEmpty()) {
+            detail.text = "No runs recorded yet.\nStart monitoring on the main screen, then come back here."
+            graph.setData(emptyList())
+            return
+        }
+        logs.forEach { f -> picker.addView(rowFor(f)) }
+        select(logs.contains(selected).let { if (it) selected!! else logs.first() })
+    }
+
+    private fun rowFor(f: File): View {
+        val rows = LogStore.parse(f)
+        val sub = if (rows.isEmpty()) "(empty)" else {
+            val a = rows.first(); val b = rows.last()
+            val dir = when {
+                b.cap > a.cap -> "charge"; b.cap < a.cap -> "discharge"; else -> "flat"
+            }
+            "${a.cap}% → ${b.cap}%  ($dir, ${rows.size} pts)"
+        }
+        return Button(this).apply {
+            text = "${stamp(f)}\n$sub"
+            isAllCaps = false
+            gravity = Gravity.START or Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
+                .also { it.topMargin = dp(4) }
+            setOnClickListener { selected = f; select(f) }
+        }
+    }
+
+    private fun select(f: File) {
+        selected = f
+        val rows = LogStore.parse(f)
+        graph.setData(rows)
+        detail.text = summarize(f, rows)
+    }
+
+    private fun summarize(f: File, rows: List<Sample>): String {
+        if (rows.size < 2) return "${f.name}\nNot enough samples."
+        val a = rows.first(); val b = rows.last()
+        val durMs = b.epoch - a.epoch
+        val durH = durMs / 3_600_000.0
+        val sb = StringBuilder()
+        fun ln(s: String) = sb.append(s).append('\n')
+        val dir = if (b.cap < a.cap) "Discharge" else if (b.cap > a.cap) "Charge" else "Flat"
+        ln("File      : ${f.name}")
+        ln("Type      : $dir")
+        ln("From      : ${full(a.epoch)}")
+        ln("To        : ${full(b.epoch)}")
+        ln("Duration  : ${fmtDur(durMs)}   (${rows.size} samples)")
+        ln("Level     : ${a.cap}% → ${b.cap}%   (Δ ${b.cap - a.cap}%)")
+
+        val chg = rows.filter { it.chgUah > 0 }
+        if (chg.size >= 2) {
+            val used = abs(chg.first().chgUah - chg.last().chgUah) / 1000.0
+            ln("Charge    : ${chg.first().chgUah / 1000} → ${chg.last().chgUah / 1000} mAh  (Δ ${"%.0f".format(used)} mAh)")
+            val capDelta = abs(b.cap - a.cap)
+            if (capDelta > 0) ln("Extrap.full: ${"%.0f".format(used / capDelta * 100)} mAh (0→100%)")
+        }
+        val volts = rows.filter { it.vMv > 0 }
+        if (volts.isNotEmpty()) {
+            val mn = volts.minBy { it.vMv }
+            ln("Voltage   : ${"%.3f".format(a.vMv / 1000.0)} → ${"%.3f".format(b.vMv / 1000.0)} V" +
+               "   (min ${"%.3f".format(mn.vMv / 1000.0)}V @ ${mn.cap}%)")
+        }
+        val temps = rows.filter { it.tempDecideg > 0 }
+        if (temps.isNotEmpty())
+            ln("Temp      : ${"%.1f".format(temps.minOf { it.tempDecideg } / 10.0)}–" +
+               "${"%.1f".format(temps.maxOf { it.tempDecideg } / 10.0)}°C")
+        if (durH > 0 && b.cap != a.cap)
+            ln("Rate      : ${"%.1f".format(abs(b.cap - a.cap) / durH)} %/hr")
+        return sb.toString()
+    }
+
+    // helpers
+    private fun legend() = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        setPadding(dp(6), dp(6), 0, 0)
+        addView(TextView(this@HistoryActivity).apply {
+            text = "▬ Battery %"; setTextColor(Color.parseColor("#4FC3F7")); textSize = 12f
+        })
+        addView(TextView(this@HistoryActivity).apply {
+            text = "    ▬ Voltage"; setTextColor(Color.parseColor("#FFB74D")); textSize = 12f
+        })
+    }
+
+    private fun stamp(f: File) =
+        SimpleDateFormat("EEE MMM d, HH:mm", Locale.US).format(Date(f.lastModified()))
+    private fun full(ms: Long) = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(ms))
+    private fun fmtDur(ms: Long): String {
+        val s = ms / 1000; return "%dh %02dm %02ds".format(s / 3600, (s % 3600) / 60, s % 60)
+    }
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+}

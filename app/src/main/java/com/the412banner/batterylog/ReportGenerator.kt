@@ -19,19 +19,11 @@ object ReportGenerator {
     private const val DESIGN_MAH = 4139.0
     private const val REPORTED_FULL_MAH = 2430.0
 
-    private data class Row(
-        val epoch: Long, val uptime: Long, val cap: Int, val status: String,
-        val plugged: String, val vMv: Int, val iUa: Int, val chgUah: Int,
-        val tempDecideg: Int, val health: String
-    )
-
-    fun latestLog(ctx: Context): File? =
-        BatteryLogService.logDir(ctx).listFiles { f -> f.name.endsWith(".csv") }
-            ?.maxByOrNull { it.lastModified() }
+    fun latestLog(ctx: Context): File? = LogStore.latest(ctx)
 
     /** Generates the report for [csv], writes it next to the log, returns the text. */
     fun generate(ctx: Context, csv: File): String {
-        val rows = parse(csv)
+        val rows = LogStore.parse(csv)
         val sb = StringBuilder()
         fun line(s: String = "") = sb.append(s).append('\n')
 
@@ -169,19 +161,6 @@ object ReportGenerator {
         runCatching { out.writeText(text) }
         return text
     }
-
-    private fun parse(csv: File): List<Row> =
-        csv.readLines().drop(1).mapNotNull { ln ->
-            val p = ln.split(",")
-            if (p.size < 12) return@mapNotNull null
-            runCatching {
-                Row(
-                    epoch = p[0].toLong(), uptime = p[2].toLong(), cap = p[3].toInt(),
-                    status = p[4], plugged = p[5], vMv = p[6].toInt(), iUa = p[7].toInt(),
-                    chgUah = p[8].toInt(), tempDecideg = p[10].toInt(), health = p[11]
-                )
-            }.getOrNull()
-        }
 
     private fun fmtDur(ms: Long): String {
         val s = ms / 1000
