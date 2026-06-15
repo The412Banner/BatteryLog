@@ -11,19 +11,23 @@ android {
         applicationId = "com.the412banner.batterylog"
         minSdk = 29
         targetSdk = 34
-        versionCode = 6
-        versionName = "1.4.0"
+        versionCode = 7
+        versionName = "1.5.0"
     }
 
     signingConfigs {
-        // Stable debug key (committed) so updates install over the top and
-        // PRESERVE collected logs — a fresh CI keystore each build would force
-        // an uninstall and wipe the app's external log dir.
-        create("debugStable") {
-            storeFile = file("debug.keystore")
+        // AOSP "testkey" (the well-known public android testkey, CN=Android),
+        // converted to a PKCS12 keystore and committed. Stable identity so updates
+        // install over the top, signed with the full v1 + v2 + v3 scheme set.
+        create("testkey") {
+            storeFile = file("testkey.p12")
+            storeType = "PKCS12"
             storePassword = "android"
-            keyAlias = "androiddebugkey"
+            keyAlias = "testkey"
             keyPassword = "android"
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
         }
     }
 
@@ -31,7 +35,7 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             isDebuggable = true
-            signingConfig = signingConfigs.getByName("debugStable")
+            signingConfig = signingConfigs.getByName("testkey")
         }
         release {
             isMinifyEnabled = false

@@ -5,8 +5,9 @@ import android.content.Context
 /**
  * Optional boot-persistence: installs a tiny Magisk module whose service.sh
  * launches a self-contained shell sampler at every boot. It writes CSV rows in
- * the SAME column layout as [BatteryLogService] into the app's own log dir, so
- * [ReportGenerator] analyses boot-logged runs identically. Requires root.
+ * the SAME column layout as [BatteryLogService] into the uninstall-proof public
+ * folder ([Storage.publicPath]), so [ReportGenerator] analyses boot-logged runs
+ * identically and they survive app uninstall. Requires root.
  *
  * NOTE: the shell bodies below use the sentinel __D__ for a literal '$' to avoid
  * Kotlin raw-string interpolation (this module targets Kotlin 1.9).
@@ -50,7 +51,9 @@ object MagiskModule {
     }
 
     fun install(ctx: Context): RootHelper.Result {
-        val logDir = BatteryLogService.logDir(ctx).absolutePath
+        // Root always writes to the uninstall-proof public folder, regardless of
+        // whether the app itself has All-files access.
+        val logDir = Storage.publicPath()
         val header = BatteryLogService.CSV_HEADER
 
         // sampler.sh — same CSV columns as the app; 'boot' marks the plugged field.
@@ -86,8 +89,8 @@ object MagiskModule {
         val moduleProp = """
             id=$ID
             name=BatteryLog Boot Sampler
-            version=1.1.0
-            versionCode=2
+            version=1.2.0
+            versionCode=3
             author=The412Banner
             description=Auto-starts battery CSV logging at every boot for the BatteryLog app.
         """.trimIndent()

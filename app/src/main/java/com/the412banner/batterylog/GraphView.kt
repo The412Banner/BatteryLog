@@ -15,6 +15,9 @@ class GraphView(ctx: Context) : View(ctx) {
 
     private var samples: List<Sample> = emptyList()
 
+    /** Compact mode for the small main-screen live graph: thinner, no legend. */
+    var compact = false
+
     private val axis = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#555555"); strokeWidth = 1.5f
     }
@@ -41,7 +44,9 @@ class GraphView(ctx: Context) : View(ctx) {
     fun setData(s: List<Sample>) { samples = s; invalidate() }
 
     override fun onDraw(c: Canvas) {
-        val padL = 70f; val padR = 60f; val padT = 20f; val padB = 50f
+        txt.textSize = if (compact) 20f else 26f
+        val padL = if (compact) 52f else 70f; val padR = if (compact) 48f else 60f
+        val padT = if (compact) 10f else 20f; val padB = if (compact) 34f else 50f
         val w = width - padL - padR
         val h = height - padT - padB
         val left = padL; val top = padT; val right = padL + w; val bottom = padT + h
@@ -115,21 +120,23 @@ class GraphView(ctx: Context) : View(ctx) {
             tempRange = "%.1f–%.1f°C".format(tMin / 10.0, tMax / 10.0)
         }
 
-        // legend (top-left, inside plot)
-        var lx = left + 14f
-        val ly = top + 26f
-        fun legend(color: Int, label: String) {
-            txt.color = color
-            c.drawText("●", lx, ly, txt)
-            lx += txt.measureText("●") + 4f
-            txt.color = Color.parseColor("#CCCCCC")
-            c.drawText(label, lx, ly, txt)
-            lx += txt.measureText(label) + 22f
+        // legend (top-left, inside plot) — skipped in the compact main-screen graph
+        if (!compact) {
+            var lx = left + 14f
+            val ly = top + 26f
+            fun legend(color: Int, label: String) {
+                txt.color = color
+                c.drawText("●", lx, ly, txt)
+                lx += txt.measureText("●") + 4f
+                txt.color = Color.parseColor("#CCCCCC")
+                c.drawText(label, lx, ly, txt)
+                lx += txt.measureText(label) + 22f
+            }
+            legend(pctColor, "%")
+            voltRange?.let { legend(voltColor, it) }
+            tempRange?.let { legend(tempColor, it) }
+            txt.color = Color.parseColor("#AAAAAA")
         }
-        legend(pctColor, "%")
-        voltRange?.let { legend(voltColor, it) }
-        tempRange?.let { legend(tempColor, it) }
-        txt.color = Color.parseColor("#AAAAAA")
 
         // X time labels
         val tf = SimpleDateFormat("HH:mm", Locale.US)

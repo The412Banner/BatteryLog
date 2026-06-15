@@ -12,10 +12,12 @@ data class Sample(
 
 object LogStore {
 
-    /** All CSV logs, newest first. */
+    /** All CSV logs across the public + legacy dirs, newest first (public wins on name clash). */
     fun logs(ctx: Context): List<File> =
-        BatteryLogService.logDir(ctx).listFiles { f -> f.name.endsWith(".csv") }
-            ?.sortedByDescending { it.lastModified() } ?: emptyList()
+        Storage.readDirs(ctx)
+            .flatMap { it.listFiles { f -> f.name.endsWith(".csv") }?.toList() ?: emptyList() }
+            .distinctBy { it.name }
+            .sortedByDescending { it.lastModified() }
 
     fun latest(ctx: Context): File? = logs(ctx).firstOrNull()
 

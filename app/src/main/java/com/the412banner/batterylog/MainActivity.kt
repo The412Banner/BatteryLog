@@ -5,8 +5,10 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
@@ -37,14 +39,21 @@ class MainActivity : AppCompatActivity() {
     private lateinit var moduleStatus: TextView
     private lateinit var estimates: TextView
     private lateinit var chargeCtl: TextView
+    private lateinit var storageStatus: TextView
+    private lateinit var liveGraph: GraphView
     private var speedBar: SeekBar? = null
     @Volatile private var estimating = false
+    @Volatile private var graphing = false
+    private var lastGraphMs = 0L
 
     private var expanded = false
     private var lastReport = ""
     private val ui = Handler(Looper.getMainLooper())
     private val ticker = object : Runnable {
-        override fun run() { refreshCard(); refreshStatus(); refreshEstimates(); ui.postDelayed(this, 2_000) }
+        override fun run() {
+            refreshCard(); refreshStatus(); refreshEstimates(); refreshGraph()
+            ui.postDelayed(this, 2_000)
+        }
     }
 
     private val notifPerm = registerForActivityResult(
@@ -67,7 +76,15 @@ class MainActivity : AppCompatActivity() {
         })
 
         root.addView(buildBatteryCard())
+        root.addView(buildLiveGraphCard())
         root.addView(buildEstimatesCard())
+
+        storageStatus = TextView(this).apply {
+            textSize = 12f
+            setPadding(dp(4), dp(8), dp(4), 0)
+            setOnClickListener { requestAllFilesAccess() }
+        }
+        root.addView(storageStatus)
 
         status = TextView(this).apply {
             textSize = 12f
@@ -240,8 +257,72 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume(); ui.post(ticker); refreshModuleStatus(); refreshChargeControl()
+        refreshStorageStatus()
+        // Once access is granted, sweep any old app-private logs into the safe folder.
+        if (Storage.canUsePublic()) Thread { Storage.migrateLegacy(this) }.start()
     }
     override fun onPause() { super.onPause(); ui.removeCallbacks(ticker) }
+
+    // ---- live mini graph ----
+    private fun buildLiveGraphCard(): View {
+        liveGraph = GraphView(this).apply { compact = true }
+        val inner = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+        }
+        inner.addView(TextView(this).apply {
+            text = "📉  Live  (%·blue   V·orange   °C·red)"
+            textSize = 13f; setTypeface(typeface, Typeface.BOLD)
+        })
+        inner.addView(liveGraph, LinearLayout.LayoutParams(MATCH_PARENT, dp(150)).also {
+            it.topMargin = dp(6)
+        })
+        return MaterialCardView(this).apply {
+            radius = dp(14).toFloat(); cardElevation = dp(2).toFloat(); useCompatPadding = true
+            isClickable = true
+            addView(inner)
+            setOnClickListener { startActivity(Intent(this@MainActivity, HistoryActivity::class.java)) }
+        }
+    }
+
+    /** Reload the latest log into the mini graph (throttled — parsing is off the UI thread). */
+    private fun refreshGraph() {
+        val nowMs = System.currentTimeMillis()
+        if (graphing || nowMs - lastGraphMs < 9_000) return
+        graphing = true; lastGraphMs = nowMs
+        Thread {
+            val live = BatteryLogService.currentLogPath?.let { java.io.File(it) }
+            val src = live?.takeIf { it.exists() } ?: LogStore.latest(this)
+            val data = src?.let { LogStore.parse(it).takeLast(400) } ?: emptyList()
+            runOnUiThread { liveGraph.setData(data) }
+            graphing = false
+        }.start()
+    }
+
+    // ---- storage access (uninstall-proof logs) ----
+    private fun refreshStorageStatus() {
+        if (Storage.canUsePublic()) {
+            storageStatus.text = "💾 Logs saved to /sdcard/BatteryLog — safe across uninstall/reinstall."
+            storageStatus.setTextColor(Color.parseColor("#66BB6A"))
+        } else {
+            storageStatus.text = "⚠️ Tap to grant All-files access so logs survive uninstall " +
+                "(currently in app storage, wiped on uninstall)."
+            storageStatus.setTextColor(Color.parseColor("#FFB74D"))
+        }
+    }
+
+    private fun requestAllFilesAccess() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Storage.canUsePublic()) return
+        runCatching {
+            startActivity(
+                Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                    Uri.parse("package:$packageName"))
+            )
+        }.onFailure {
+            runCatching { startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) }
+        }
+        toast("Enable “Allow access to manage all files”, then come back.")
+    }
 
     // ---- estimates card ----
     private fun buildEstimatesCard(): View {

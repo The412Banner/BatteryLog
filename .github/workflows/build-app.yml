@@ -39,6 +39,11 @@ jobs:
           cp app/build/outputs/apk/debug/app-debug.apk out/BatteryLog-debug.apk
           sha256sum out/BatteryLog-debug.apk | tee out/BatteryLog-debug.apk.sha256
 
+      - name: Verify signature (testkey, v1/v2/v3)
+        run: |
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -1)
+          "$APKSIGNER" verify --verbose --print-certs out/BatteryLog-debug.apk | tee out/signature.txt
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:

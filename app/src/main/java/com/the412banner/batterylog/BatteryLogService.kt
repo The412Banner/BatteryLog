@@ -59,9 +59,12 @@ class BatteryLogService : Service() {
         @Volatile var currentLogPath: String? = null
             private set
 
-        /** Directory where logs live. Stable across start/stop so the report can find them. */
-        fun logDir(ctx: Context): File =
-            File(ctx.getExternalFilesDir(null), "logs").apply { mkdirs() }
+        /**
+         * Directory where logs are written. Prefers the uninstall-proof public
+         * folder ([Storage.publicDir]); falls back to the app-private dir when
+         * All-files access isn't granted. Stable across start/stop.
+         */
+        fun logDir(ctx: Context): File = Storage.logDir(ctx)
     }
 
     private lateinit var bm: BatteryManager
