@@ -33,16 +33,27 @@ jobs:
       - name: Build debug APK
         run: ./gradlew --no-daemon assembleDebug
 
-      - name: Rename APK
+      - name: Sign with testkey (force v1 + v2 + v3)
         run: |
           mkdir -p out
-          cp app/build/outputs/apk/debug/app-debug.apk out/BatteryLog-debug.apk
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort | tail -1)
+          "$BT/zipalign" -p -f 4 app/build/outputs/apk/debug/app-debug.apk out/aligned.apk
+          "$BT/apksigner" sign \
+            --key app/testkey.pk8 --cert app/testkey.x509.pem \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --out out/BatteryLog-debug.apk out/aligned.apk
+          rm -f out/aligned.apk out/BatteryLog-debug.apk.idsig
           sha256sum out/BatteryLog-debug.apk | tee out/BatteryLog-debug.apk.sha256
 
       - name: Verify signature (testkey, v1/v2/v3)
         run: |
-          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -1)
-          "$APKSIGNER" verify --verbose --print-certs out/BatteryLog-debug.apk | tee out/signature.txt
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort | tail -1)
+          "$BT/apksigner" verify --verbose --print-certs out/BatteryLog-debug.apk | tee out/signature.txt
+          grep -q "v1 scheme (JAR signing): true" out/signature.txt
+          grep -q "v2 scheme (APK Signature Scheme v2): true" out/signature.txt
+          grep -q "v3 scheme (APK Signature Scheme v3): true" out/signature.txt
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
