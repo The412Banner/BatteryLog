@@ -33,6 +33,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var status: TextView
     private lateinit var report: TextView
     private lateinit var autoBtn: Button
+    private lateinit var moduleStatus: TextView
 
     private var expanded = false
     private var lastReport = ""
@@ -89,6 +90,18 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, dp(12), 0, 0)
         }
         root.addView(report)
+
+        // ---- Boot-module live indicator (bottom of screen) ----
+        root.addView(divider())
+        moduleStatus = TextView(this).apply {
+            textSize = 13f
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(dp(4), dp(8), dp(4), dp(16))
+            text = "Boot module: checking…"
+            setTextColor(Color.GRAY)
+            setOnClickListener { refreshModuleStatus() }   // tap to re-check
+        }
+        root.addView(moduleStatus)
 
         setContentView(ScrollView(this).apply { addView(root) })
 
@@ -216,8 +229,28 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    override fun onResume() { super.onResume(); ui.post(ticker) }
+    override fun onResume() { super.onResume(); ui.post(ticker); refreshModuleStatus() }
     override fun onPause() { super.onPause(); ui.removeCallbacks(ticker) }
+
+    /** Verifies the Magisk boot module is installed AND its sampler is alive (needs root). */
+    private fun refreshModuleStatus() {
+        moduleStatus.text = "Boot module: checking…"
+        moduleStatus.setTextColor(Color.GRAY)
+        Thread {
+            val s = MagiskModule.status()
+            val (txt, color) = when {
+                !s.rooted        -> "⚪ Boot module: no root — cannot verify" to Color.GRAY
+                !s.installed     -> "⚪ Boot module: not installed" to Color.GRAY
+                !s.enabled       -> "🟡 Boot module: installed but DISABLED (reboot/Magisk)" to Color.parseColor("#FFB74D")
+                s.running        -> "🟢 Boot module: installed & RUNNING (pid ${s.pid})" to Color.parseColor("#66BB6A")
+                else             -> "🔴 Boot module: installed, NOT running — reboot to start" to Color.parseColor("#EF5350")
+            }
+            runOnUiThread {
+                moduleStatus.text = txt
+                moduleStatus.setTextColor(color)
+            }
+        }.start()
+    }
 
     // ---- actions ----
     private fun start() {
@@ -252,12 +285,14 @@ class MainActivity : AppCompatActivity() {
         val r = MagiskModule.install(this)
         uiToast(if (r.ok && r.out.contains("INSTALL_OK"))
             "Boot module installed — active after next reboot." else "Install failed: ${r.out.take(200)}")
+        runOnUiThread { refreshModuleStatus() }
     }.start()
 
     private fun removeModule() = Thread {
         if (!RootHelper.hasRoot()) { uiToast("No root (su)."); return@Thread }
         val r = MagiskModule.remove()
         uiToast(if (r.ok) "Boot module removed (takes effect next reboot)." else "Remove failed: ${r.out.take(200)}")
+        runOnUiThread { refreshModuleStatus() }
     }.start()
 
     // ---- helpers ----

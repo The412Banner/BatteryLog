@@ -19,6 +19,36 @@ object MagiskModule {
     fun isInstalled(): Boolean =
         RootHelper.run("test -d $DIR && echo INSTALLED").out.contains("INSTALLED")
 
+    /** Live boot-module health: installed? enabled? sampler actually running? */
+    data class Status(
+        val rooted: Boolean,
+        val installed: Boolean,
+        val enabled: Boolean,
+        val running: Boolean,
+        val pid: String?
+    )
+
+    fun status(): Status {
+        if (!RootHelper.hasRoot()) return Status(false, false, false, false, null)
+        // [d]/[D]/run markers so the grep never matches itself.
+        val script = """
+            D="$DIR"
+            [ -d "${'$'}D" ] && echo INSTALLED
+            { [ -f "${'$'}D/disable" ] || [ -f "${'$'}D/remove" ]; } && echo DISABLED
+            PID=${'$'}(ps -A -o PID,ARGS 2>/dev/null | grep "[s]ampler.sh" | grep batterylog_boot | awk '{print ${'$'}1}' | head -1)
+            [ -n "${'$'}PID" ] && echo "RUNNING ${'$'}PID"
+        """.trimIndent()
+        val out = RootHelper.run(script).out
+        val pid = Regex("RUNNING\\s+(\\d+)").find(out)?.groupValues?.get(1)
+        return Status(
+            rooted = true,
+            installed = out.contains("INSTALLED"),
+            enabled = out.contains("INSTALLED") && !out.contains("DISABLED"),
+            running = pid != null,
+            pid = pid
+        )
+    }
+
     fun install(ctx: Context): RootHelper.Result {
         val logDir = BatteryLogService.logDir(ctx).absolutePath
         val header = BatteryLogService.CSV_HEADER
