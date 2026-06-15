@@ -53,7 +53,9 @@ jobs:
       - name: Verify signature (testkey, v1/v2/v3)
         run: |
           BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort | tail -1)
-          "$BT/apksigner" verify --verbose --print-certs out/BatteryLog-debug.apk | tee out/signature.txt
+          # Verify across the same SDK range the signing used, otherwise apksigner
+          # only reports v3 (v1/v2 are irrelevant above API 27 and shown false).
+          "$BT/apksigner" verify --min-sdk-version 21 --verbose --print-certs out/BatteryLog-debug.apk | tee out/signature.txt
           grep -q "v1 scheme (JAR signing): true" out/signature.txt
           grep -q "v2 scheme (APK Signature Scheme v2): true" out/signature.txt
           grep -q "v3 scheme (APK Signature Scheme v3): true" out/signature.txt
