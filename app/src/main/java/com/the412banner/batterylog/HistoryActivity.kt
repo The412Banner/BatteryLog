@@ -8,6 +8,7 @@ import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.Button
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -25,6 +26,19 @@ class HistoryActivity : AppCompatActivity() {
     private lateinit var detail: TextView
     private lateinit var picker: LinearLayout
     private var selected: File? = null
+
+    // ---- range views (aggregate across all recorded runs) ----
+    private val ranges = listOf(
+        "24h"  to 24L * 3_600_000,
+        "7d"   to 7L * 86_400_000,
+        "14d"  to 14L * 86_400_000,
+        "1 mo" to 30L * 86_400_000,
+        "3 mo" to 90L * 86_400_000,
+    )
+    private val rangeButtons = mutableListOf<Button>()
+    private var activeRange: String? = null
+    /** Break the line across logging gaps longer than this in range views. */
+    private val gapBreakMs = 20L * 60_000
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,10 +60,11 @@ class HistoryActivity : AppCompatActivity() {
         root.addView(lifetimeCard())
 
         root.addView(TextView(this).apply {
-            text = "Recorded runs (this app, since install)"
+            text = "Time range"
             textSize = 13f; setTypeface(typeface, Typeface.BOLD)
-            setPadding(dp(4), dp(8), 0, dp(8))
+            setPadding(dp(4), dp(8), 0, dp(6))
         })
+        root.addView(rangeSelector())
 
         graph = GraphView(this)
         root.addView(MaterialCardView(this).apply {
@@ -92,7 +107,97 @@ class HistoryActivity : AppCompatActivity() {
             return
         }
         logs.forEach { f -> picker.addView(rowFor(f)) }
-        select(logs.contains(selected).let { if (it) selected!! else logs.first() })
+        when {
+            activeRange != null ->
+                ranges.firstOrNull { it.first == activeRange }
+                    ?.let { selectRange(it.first, it.second) }
+                    ?: selectRange(ranges[0].first, ranges[0].second)
+            selected != null && logs.contains(selected) -> select(selected!!)
+            else -> selectRange(ranges[0].first, ranges[0].second) // default: last 24h
+        }
+    }
+
+    // ---- range selector (horizontal chips above the graph) ----
+    private fun rangeSelector(): View {
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        rangeButtons.clear()
+        ranges.forEach { (label, ms) ->
+            val b = Button(this).apply {
+                text = label; isAllCaps = false; textSize = 13f
+                minWidth = 0; minimumWidth = 0
+                setPadding(dp(16), dp(6), dp(16), dp(6))
+                layoutParams = LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT)
+                    .also { it.rightMargin = dp(8) }
+                setOnClickListener { selectRange(label, ms) }
+            }
+            rangeButtons.add(b)
+            row.addView(b)
+        }
+        return HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            setPadding(0, 0, 0, dp(8))
+            addView(row)
+        }
+    }
+
+    private fun highlightRange() {
+        rangeButtons.forEach { b ->
+            val on = b.text.toString() == activeRange
+            b.setBackgroundColor(Color.parseColor(if (on) "#1565C0" else "#2A2A2A"))
+            b.setTextColor(if (on) Color.WHITE else Color.parseColor("#BBBBBB"))
+        }
+    }
+
+    private fun selectRange(label: String, windowMs: Long) {
+        activeRange = label
+        selected = null
+        highlightRange()
+        val cutoff = System.currentTimeMillis() - windowMs
+        val rows = LogStore.samplesSince(this, cutoff)
+        graph.gapBreakMs = gapBreakMs
+        graph.setData(rows)
+        detail.text = summarizeRange(label, rows, cutoff)
+    }
+
+    private fun summarizeRange(label: String, rows: List<Sample>, cutoff: Long): String {
+        if (rows.size < 2)
+            return "Range     : last $label\n" +
+                "Since     : ${full(cutoff)}\n" +
+                "Not enough samples in this window yet (${rows.size}).\n" +
+                "Start a monitoring run, or pick a wider range / an individual run below."
+        val a = rows.first(); val b = rows.last()
+        var drained = 0; var charged = 0
+        var dischMs = 0L; var dischDrop = 0
+        var sessions = 1
+        for (i in 1 until rows.size) {
+            val dt = rows[i].epoch - rows[i - 1].epoch
+            val dc = rows[i].cap - rows[i - 1].cap
+            if (dt > gapBreakMs) { sessions++; continue }       // new run / device was off
+            if (dc < 0) { drained += -dc; dischMs += dt; dischDrop += -dc }
+            else if (dc > 0) charged += dc
+        }
+        val sb = StringBuilder()
+        fun ln(s: String) = sb.append(s).append('\n')
+        ln("Range     : last $label   ($sessions run${if (sessions == 1) "" else "s"}, ${rows.size} samples)")
+        ln("Window    : ${full(a.epoch)}")
+        ln("       →    ${full(b.epoch)}")
+        ln("Level     : ${a.cap}% → ${b.cap}%   (net Δ ${b.cap - a.cap}%)")
+        ln("Discharged: ${drained}%   •   Charged: ${charged}%")
+        if (dischMs > 0 && dischDrop > 0) {
+            val rate = dischDrop / (dischMs / 3_600_000.0)
+            ln("Avg drain : ${"%.1f".format(rate)} %/hr   (over ${fmtDur(dischMs)} of use)")
+        }
+        val volts = rows.filter { it.vMv > 0 }
+        if (volts.isNotEmpty()) {
+            val mn = volts.minBy { it.vMv }
+            ln("Voltage   : min ${"%.3f".format(mn.vMv / 1000.0)}V @ ${mn.cap}%" +
+               "   (max ${"%.3f".format(volts.maxOf { it.vMv } / 1000.0)}V)")
+        }
+        val temps = rows.filter { it.tempDecideg > 0 }
+        if (temps.isNotEmpty())
+            ln("Temp      : ${"%.1f".format(temps.minOf { it.tempDecideg } / 10.0)}–" +
+               "${"%.1f".format(temps.maxOf { it.tempDecideg } / 10.0)}°C")
+        return sb.toString().trimEnd()
     }
 
     private fun rowFor(f: File): View {
@@ -116,7 +221,10 @@ class HistoryActivity : AppCompatActivity() {
 
     private fun select(f: File) {
         selected = f
+        activeRange = null
+        highlightRange()
         val rows = LogStore.parse(f)
+        graph.gapBreakMs = 0          // single run: draw a continuous line as before
         graph.setData(rows)
         detail.text = summarize(f, rows)
     }

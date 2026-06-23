@@ -21,6 +21,17 @@ object LogStore {
 
     fun latest(ctx: Context): File? = logs(ctx).firstOrNull()
 
+    /**
+     * Every sample across every log whose timestamp is at or after [sinceEpochMs],
+     * merged and sorted oldest-first. Used by the history range views
+     * (last 24h / 7d / 14d / month / 3 months).
+     */
+    fun samplesSince(ctx: Context, sinceEpochMs: Long): List<Sample> =
+        logs(ctx)
+            .flatMap { parse(it) }
+            .filter { it.epoch >= sinceEpochMs }
+            .sortedBy { it.epoch }
+
     fun parse(csv: File): List<Sample> =
         csv.readLines().drop(1).mapNotNull { ln ->
             val p = ln.split(",")

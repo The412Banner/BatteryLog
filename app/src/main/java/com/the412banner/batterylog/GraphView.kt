@@ -18,6 +18,13 @@ class GraphView(ctx: Context) : View(ctx) {
     /** Compact mode for the small main-screen live graph: thinner, no legend. */
     var compact = false
 
+    /**
+     * When > 0, the line is broken (lifted) wherever two consecutive samples are more
+     * than this many ms apart, so merged multi-run range views don't draw a misleading
+     * straight bridge across periods when nothing was being logged. 0 = always connect.
+     */
+    var gapBreakMs: Long = 0
+
     private val axis = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#555555"); strokeWidth = 1.5f
     }
@@ -72,9 +79,12 @@ class GraphView(ctx: Context) : View(ctx) {
 
         // % path
         val pPath = Path()
+        var pPrev = 0L
         samples.forEachIndexed { i, s ->
             val px = x(s.epoch); val py = bottom - s.cap.coerceIn(0, 100) / 100f * h
-            if (i == 0) pPath.moveTo(px, py) else pPath.lineTo(px, py)
+            if (i == 0 || (gapBreakMs > 0 && s.epoch - pPrev > gapBreakMs)) pPath.moveTo(px, py)
+            else pPath.lineTo(px, py)
+            pPrev = s.epoch
         }
         c.drawPath(pPath, pctLine)
 
@@ -86,10 +96,13 @@ class GraphView(ctx: Context) : View(ctx) {
             val vMax = volts.maxOf { it.vMv }
             val vSpan = (vMax - vMin).coerceAtLeast(1)
             val vPath = Path()
+            var vPrev = 0L
             volts.forEachIndexed { i, s ->
                 val px = x(s.epoch)
                 val py = bottom - (s.vMv - vMin).toFloat() / vSpan * h
-                if (i == 0) vPath.moveTo(px, py) else vPath.lineTo(px, py)
+                if (i == 0 || (gapBreakMs > 0 && s.epoch - vPrev > gapBreakMs)) vPath.moveTo(px, py)
+                else vPath.lineTo(px, py)
+                vPrev = s.epoch
             }
             c.drawPath(vPath, voltLine)
             txt.color = voltColor
@@ -107,10 +120,13 @@ class GraphView(ctx: Context) : View(ctx) {
             val tMax = temps.maxOf { it.tempDecideg }
             val tSpan = (tMax - tMin).coerceAtLeast(1)
             val tPath = Path()
+            var tPrev = 0L
             temps.forEachIndexed { i, s ->
                 val px = x(s.epoch)
                 val py = bottom - (s.tempDecideg - tMin).toFloat() / tSpan * h
-                if (i == 0) tPath.moveTo(px, py) else tPath.lineTo(px, py)
+                if (i == 0 || (gapBreakMs > 0 && s.epoch - tPrev > gapBreakMs)) tPath.moveTo(px, py)
+                else tPath.lineTo(px, py)
+                tPrev = s.epoch
             }
             c.drawPath(tPath, tempLine)
             txt.color = tempColor
@@ -138,10 +154,15 @@ class GraphView(ctx: Context) : View(ctx) {
             txt.color = Color.parseColor("#AAAAAA")
         }
 
-        // X time labels
-        val tf = SimpleDateFormat("HH:mm", Locale.US)
+        // X time labels — switch to a date format once the window spans more than ~36h
+        val multiDay = span > 36L * 3_600_000
+        val tf = SimpleDateFormat(if (multiDay) "MMM d" else "HH:mm", Locale.US)
         c.drawText(tf.format(Date(t0)), left, bottom + 38f, txt)
         val endLabel = tf.format(Date(t1))
         c.drawText(endLabel, right - txt.measureText(endLabel), bottom + 38f, txt)
+        if (!compact && multiDay) {
+            val midLabel = tf.format(Date(t0 + span / 2))
+            c.drawText(midLabel, left + w / 2 - txt.measureText(midLabel) / 2, bottom + 38f, txt)
+        }
     }
 }
