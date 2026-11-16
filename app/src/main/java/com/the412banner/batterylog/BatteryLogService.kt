@@ -1,99 +1,133 @@
 package com.the412banner.batterylog
 
 import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ServiceInfo
 import android.os.BatteryManager
+import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import java.io.File
+import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 /**
- * Foreground service that samples the battery every [SAMPLE_INTERVAL_MS] and
- * appends a row to a CSV in the app's external files dir. No root required:
- * everything comes from BatteryManager + the sticky ACTION_BATTERY_CHANGED intent.
+ * Foreground service that samples the battery every N seconds (Settings, default 30) into a CSV.
+ * No root needed. foregroundServiceType=specialUse, not dataSync, so Android 14+ doesn't cap it at ~6 h/day.
  *
- * Uses foregroundServiceType=specialUse (not dataSync) so Android 14 does NOT
- * impose its ~6h/day cap — a full 100%->0% discharge can take many hours.
- *
- * Two modes:
- *  - MANUAL (default start): begins sampling immediately to a fresh CSV.
- *  - AUTO  (ACTION_START_AUTO): the service stays resident and watches the
- *    charger. The instant you UNPLUG it opens a fresh discharge-only log; when
- *    you PLUG BACK IN it finalises that log and waits for the next unplug. This
- *    avoids Android 14's "can't start an FGS from a background broadcast" limit
- *    because the service is already alive and reacts to the plug event itself.
+ * Modes:
+ *  - MANUAL: samples right away into a fresh CSV until stopped (or 0 %).
+ *  - AUTO: stays resident, opens a fresh discharge log when the charger is unplugged and closes it
+ *    when plugged back in. The service is already running, so this isn't blocked by Android 14's
+ *    "no foreground service from a background broadcast" rule.
+ * The mode is saved, so a restart by Android, a reboot ([BootReceiver]) or an app update resumes it.
+ * While running it also drives the battery alerts ([Alerts]).
  */
 class BatteryLogService : Service() {
 
+    data class State(
+        val active: Boolean = false,
+        val auto: Boolean = false,
+        val recording: Boolean = false,
+        val logPath: String? = null,
+        val startedAt: Long = 0,
+        val samples: Int = 0,
+        val intervalSec: Int = 30,
+    )
+
     companion object {
-        const val SAMPLE_INTERVAL_MS = 30_000L
-        const val CHANNEL_ID = "batterylog"
-        const val NOTIF_ID = 1
         const val ACTION_STOP = "com.the412banner.batterylog.STOP"
         const val ACTION_START_AUTO = "com.the412banner.batterylog.START_AUTO"
+        const val ACTION_START_MANUAL = "com.the412banner.batterylog.START_MANUAL"
+        const val ACTION_RESTORE = "com.the412banner.batterylog.RESTORE"
 
-        /** Header written as the first line of every CSV. */
+        /** First line of every CSV (the boot sampler writes the same columns). */
         const val CSV_HEADER =
             "epoch_ms,iso_time,uptime_ms,capacity_pct,status,plugged," +
-            "voltage_mV,current_uA,charge_counter_uAh,energy_counter_nWh,temp_decideg,health"
+                "voltage_mV,current_uA,charge_counter_uAh,energy_counter_nWh,temp_decideg,health"
 
-        /** True while actively sampling rows to a file. */
-        @Volatile var running = false
-            private set
-        /** True while Auto mode is engaged (start-on-unplug / stop-on-plug). */
-        @Volatile var autoArmed = false
-            private set
-        @Volatile var currentLogPath: String? = null
-            private set
+        private val _state = MutableStateFlow(State())
+        val state: StateFlow<State> = _state.asStateFlow()
 
-        /**
-         * Directory where logs are written. Prefers the uninstall-proof public
-         * folder ([Storage.publicDir]); falls back to the app-private dir when
-         * All-files access isn't granted. Stable across start/stop.
-         */
+        val running: Boolean get() = _state.value.recording
+        val autoArmed: Boolean get() = _state.value.auto
+        val currentLogPath: String? get() = _state.value.logPath
+
         fun logDir(ctx: Context): File = Storage.logDir(ctx)
+
+        fun startAuto(ctx: Context) = start(ctx, ACTION_START_AUTO)
+        fun startManual(ctx: Context) = start(ctx, ACTION_START_MANUAL)
+        fun restore(ctx: Context) = start(ctx, ACTION_RESTORE)
+
+        fun stop(ctx: Context) {
+            BatteryLogApp.get(ctx).settings.update { it.copy(mode = LogMode.Off) }
+            if (!_state.value.active) return
+            runCatching { ctx.startService(Intent(ctx, BatteryLogService::class.java).setAction(ACTION_STOP)) }
+        }
+
+        private fun start(ctx: Context, action: String): Boolean = runCatching {
+            ContextCompat.startForegroundService(ctx, Intent(ctx, BatteryLogService::class.java).setAction(action))
+            true
+        }.getOrDefault(false)
     }
 
     private lateinit var bm: BatteryManager
     private lateinit var thread: HandlerThread
     private lateinit var handler: Handler
+    private lateinit var alerts: Alerts
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var wakeLock: PowerManager.WakeLock? = null
     private var logFile: File? = null
     private var foregroundStarted = false
-    private var powerRegistered = false
+    private var receiverRegistered = false
+    private var lastNotifyAt = 0L
+    private var lastCleanupAt = 0L
+
+    private val settings get() = BatteryLogApp.get(this).settings
 
     private val sampler = object : Runnable {
         override fun run() {
             sampleOnce()
-            handler.postDelayed(this, SAMPLE_INTERVAL_MS)
+            handler.postDelayed(this, settings.current().sampleSeconds.coerceIn(5, 600) * 1000L)
         }
     }
 
-    /** Reacts to charger plug/unplug while Auto mode is armed. */
-    private val powerReceiver = object : BroadcastReceiver() {
+    private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (!autoArmed) return
             when (intent?.action) {
                 Intent.ACTION_POWER_DISCONNECTED -> handler.post {
-                    startLogging()
-                    updateNotification("Auto — recording discharge")
+                    if (_state.value.auto) startLogging()
+                    refreshNotification(force = true)
                 }
                 Intent.ACTION_POWER_CONNECTED -> handler.post {
-                    stopLogging()
-                    updateNotification("Auto-armed — waiting for unplug")
+                    if (_state.value.auto) stopLogging()
+                    refreshNotification(force = true)
+                }
+                Intent.ACTION_BATTERY_CHANGED -> handler.post {
+                    val b = BatteryInfo.read(this@BatteryLogService)
+                    alerts.check(b, settings.current())
+                    refreshNotification(b)
                 }
             }
         }
@@ -104,150 +138,210 @@ class BatteryLogService : Service() {
         bm = getSystemService(Context.BATTERY_SERVICE) as BatteryManager
         thread = HandlerThread("battery-sampler").apply { start() }
         handler = Handler(thread.looper)
-        createChannel()
+        alerts = Alerts(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            ACTION_STOP -> {
-                fullStop()
-                return START_NOT_STICKY
-            }
-            ACTION_START_AUTO -> {
-                startAuto()
-                return START_STICKY
-            }
-            else -> {
-                startManual()
-                return START_STICKY
-            }
+        // A null intent = Android restarted us after killing the process: resume the saved mode.
+        val action = intent?.action ?: ACTION_RESTORE
+        val mode = when (action) {
+            ACTION_STOP -> LogMode.Off
+            ACTION_START_AUTO -> LogMode.Auto
+            ACTION_START_MANUAL -> LogMode.Manual
+            ACTION_RESTORE -> settings.current().mode
+            else -> LogMode.Manual
         }
+        // startForegroundService() requires startForeground() even when we stop right away.
+        ensureForeground()
+        when (mode) {
+            LogMode.Off -> { fullStop(); return START_NOT_STICKY }
+            LogMode.Auto -> handler.post { startAuto() }
+            LogMode.Manual -> handler.post { startManual(fresh = action != ACTION_RESTORE || !_state.value.recording) }
+        }
+        return START_STICKY
     }
 
-    // ---- mode entry points ----
+    // ---- modes (run on the sampler thread) ----
 
-    private fun startManual() {
-        autoArmed = false
-        unregisterPower()
-        ensureForeground("starting…")
+    private fun startManual(fresh: Boolean) {
+        settings.update { it.copy(mode = LogMode.Manual) }
+        _state.value = _state.value.copy(active = true, auto = false)
+        registerReceivers()
+        if (fresh && _state.value.recording) stopLogging()
         startLogging()
+        refreshNotification(force = true)
+        cleanupIfDue()
     }
 
     private fun startAuto() {
-        autoArmed = true
-        ensureForeground("Auto-armed — waiting for unplug")
-        registerPower()
-        // Engage immediately if we're already running on battery.
-        if (isUnplugged()) {
-            startLogging()
-            updateNotification("Auto — recording discharge")
-        } else {
-            stopLogging()
-            updateNotification("Auto-armed — waiting for unplug")
-        }
+        settings.update { it.copy(mode = LogMode.Auto) }
+        _state.value = _state.value.copy(active = true, auto = true)
+        registerReceivers()
+        if (isUnplugged()) startLogging() else stopLogging()
+        refreshNotification(force = true)
+        cleanupIfDue()
     }
 
     private fun fullStop() {
-        autoArmed = false
-        unregisterPower()
-        stopLogging()
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        foregroundStarted = false
-        stopSelf()
+        handler.post {
+            unregisterReceivers()
+            stopLogging()
+            _state.value = State()
+            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+            foregroundStarted = false
+            stopSelf()
+        }
     }
 
-    // ---- logging lifecycle ----
+    // ---- logging ----
 
     private fun startLogging() {
-        if (running) return
-
+        if (_state.value.recording) return
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "BatteryLog::sampler").apply {
             setReferenceCounted(false)
             acquire()
         }
-
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        logFile = File(logDir(this), "battery_log_$stamp.csv").also {
-            it.appendText(CSV_HEADER + "\n")
-            currentLogPath = it.absolutePath
-        }
-
-        running = true
-        sampleOnce()
-        handler.postDelayed(sampler, SAMPLE_INTERVAL_MS)
+        val f = File(logDir(this), "battery_log_$stamp.csv")
+        runCatching { f.appendText(CSV_HEADER + "\n") }
+        logFile = f
+        _state.value = _state.value.copy(
+            recording = true, logPath = f.absolutePath, startedAt = System.currentTimeMillis(), samples = 0,
+            intervalSec = settings.current().sampleSeconds,
+        )
+        handler.removeCallbacks(sampler)
+        handler.post(sampler)
     }
 
     private fun stopLogging() {
         handler.removeCallbacks(sampler)
-        running = false
         logFile = null
         runCatching { wakeLock?.release() }
         wakeLock = null
+        _state.value = _state.value.copy(recording = false, logPath = null, samples = 0)
     }
 
     private fun sampleOnce() {
         val f = logFile ?: return
         val now = System.currentTimeMillis()
-
         val sticky = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         val voltageMv = sticky?.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1) ?: -1
         val tempDecideg = sticky?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, -1) ?: -1
         val statusInt = sticky?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
         val pluggedInt = sticky?.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1) ?: -1
         val healthInt = sticky?.getIntExtra(BatteryManager.EXTRA_HEALTH, -1) ?: -1
-
         val capacity = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
         val currentUa = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
         val chargeUah = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER)
         val energyNwh = bm.getLongProperty(BatteryManager.BATTERY_PROPERTY_ENERGY_COUNTER)
 
         val iso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date(now))
-        val line = "$now,$iso,${android.os.SystemClock.elapsedRealtime()},$capacity," +
+        val line = "$now,$iso,${SystemClock.elapsedRealtime()},$capacity," +
             "${statusName(statusInt)},${pluggedName(pluggedInt)},$voltageMv,$currentUa," +
-            "$chargeUah,$energyNwh,$tempDecideg,${healthName(healthInt)}"
+            "$chargeUah,$energyNwh,$tempDecideg,${healthName(healthInt)}\n"
+        // Synced to disk on every row so the tail survives a hard shut-off.
+        runCatching {
+            FileOutputStream(f, true).use { out ->
+                out.write(line.toByteArray())
+                out.fd.sync()
+            }
+        }
+        _state.value = _state.value.copy(samples = _state.value.samples + 1, intervalSec = settings.current().sampleSeconds)
 
-        runCatching { f.appendText(line + "\n") }
-        // Force to disk each row so the tail survives a hard PMIC shut-off.
-        runCatching { java.io.FileOutputStream(f, true).use { it.fd.sync() } }
-
-        updateNotification(
-            "$capacity%  ${"%.2f".format(voltageMv / 1000.0)}V  " +
-            "${"%.0f".format(currentUa / 1000.0)}mA  ${"%.1f".format(tempDecideg / 10.0)}°C"
-        )
-
-        // Auto-stop when fully drained so the run ends cleanly at 0%.
-        if (capacity in 0..0 && statusInt != BatteryManager.BATTERY_STATUS_CHARGING) {
-            if (autoArmed) {
-                stopLogging()
-                updateNotification("Auto-armed — waiting for unplug")
-            } else {
+        if (capacity == 0 && statusInt != BatteryManager.BATTERY_STATUS_CHARGING) {
+            if (_state.value.auto) stopLogging() else {
+                settings.update { it.copy(mode = LogMode.Off) }
                 fullStop()
             }
         }
+        refreshNotification()
     }
 
-    // ---- power receiver registration ----
+    private fun cleanupIfDue() {
+        val days = settings.current().keepDays
+        val now = System.currentTimeMillis()
+        if (days <= 0 || now - lastCleanupAt < 6 * 3_600_000L) return
+        lastCleanupAt = now
+        val keep = _state.value.logPath
+        scope.launch { runCatching { BatteryLogApp.get(this@BatteryLogService).logs.deleteOlderThan(days, keep) } }
+    }
 
-    private fun registerPower() {
-        if (powerRegistered) return
+    // ---- receivers ----
+
+    private fun registerReceivers() {
+        if (receiverRegistered) return
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_POWER_CONNECTED)
             addAction(Intent.ACTION_POWER_DISCONNECTED)
+            addAction(Intent.ACTION_BATTERY_CHANGED)
         }
-        ContextCompat.registerReceiver(this, powerReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
-        powerRegistered = true
+        ContextCompat.registerReceiver(this, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        receiverRegistered = true
     }
 
-    private fun unregisterPower() {
-        if (!powerRegistered) return
-        runCatching { unregisterReceiver(powerReceiver) }
-        powerRegistered = false
+    private fun unregisterReceivers() {
+        if (!receiverRegistered) return
+        runCatching { unregisterReceiver(receiver) }
+        receiverRegistered = false
     }
 
     private fun isUnplugged(): Boolean {
         val sticky = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         return (sticky?.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1) ?: -1) == 0
+    }
+
+    // ---- notification ----
+
+    private fun ensureForeground() {
+        if (foregroundStarted) return
+        val type = if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0
+        ServiceCompat.startForeground(this, Notifier.ID_SERVICE, buildNotification(BatteryInfo.read(this)), type)
+        foregroundStarted = true
+    }
+
+    private fun refreshNotification(b: BatteryInfo? = null, force: Boolean = false) {
+        if (!foregroundStarted) return
+        val now = SystemClock.elapsedRealtime()
+        if (!force && now - lastNotifyAt < 10_000) return
+        lastNotifyAt = now
+        val info = b ?: BatteryInfo.read(this)
+        runCatching {
+            getSystemService(android.app.NotificationManager::class.java).notify(Notifier.ID_SERVICE, buildNotification(info))
+        }
+    }
+
+    private fun buildNotification(b: BatteryInfo): Notification {
+        val s = _state.value
+        val stopPi = PendingIntent.getService(
+            this, 0, Intent(this, BatteryLogService::class.java).setAction(ACTION_STOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val title = when {
+            s.auto && s.recording -> "Auto · recording on battery"
+            s.auto -> "Auto · waiting for unplug"
+            s.recording -> "Recording"
+            else -> "BatteryLog"
+        }
+        val unit = settings.current().tempUnit
+        val parts = buildList {
+            if (b.capacityPct >= 0) add("${b.capacityPct} %")
+            if (!b.watts.isNaN()) add(Fmt.watts(b.watts))
+            if (!b.tempC.isNaN()) add(Fmt.temp(b.tempC, unit))
+            if (b.voltageMv > 0) add(Fmt.voltsShort(b.voltageMv))
+        }
+        return NotificationCompat.Builder(this, Notifier.CH_LOGGING)
+            .setSmallIcon(R.drawable.ic_stat_battery)
+            .setContentTitle(title)
+            .setContentText(parts.joinToString("  ·  "))
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
+            .setShowWhen(false)
+            .setContentIntent(Notifier.openAppIntent(this))
+            .addAction(0, "Stop", stopPi)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+            .build()
     }
 
     private fun statusName(s: Int) = when (s) {
@@ -275,48 +369,12 @@ class BatteryLogService : Service() {
         else -> "unknown"
     }
 
-    private fun createChannel() {
-        val nm = getSystemService(NotificationManager::class.java)
-        val ch = NotificationChannel(CHANNEL_ID, "Battery logging", NotificationManager.IMPORTANCE_LOW)
-        ch.setShowBadge(false)
-        nm.createNotificationChannel(ch)
-    }
-
-    private fun ensureForeground(text: String) {
-        if (!foregroundStarted) {
-            startForeground(NOTIF_ID, buildNotification(text))
-            foregroundStarted = true
-        } else {
-            updateNotification(text)
-        }
-    }
-
-    private fun buildNotification(text: String): Notification {
-        val stopIntent = Intent(this, BatteryLogService::class.java).setAction(ACTION_STOP)
-        val stopPi = android.app.PendingIntent.getService(
-            this, 0, stopIntent,
-            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
-        )
-        val title = if (autoArmed) "BatteryLog — Auto mode" else "BatteryLog running"
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
-            .setContentTitle(title)
-            .setContentText(text)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .addAction(0, "Stop", stopPi)
-            .build()
-    }
-
-    private fun updateNotification(text: String) {
-        getSystemService(NotificationManager::class.java)
-            .notify(NOTIF_ID, buildNotification(text))
-    }
-
     override fun onDestroy() {
-        unregisterPower()
-        stopLogging()
-        autoArmed = false
+        unregisterReceivers()
+        handler.removeCallbacks(sampler)
+        runCatching { wakeLock?.release() }
+        _state.value = State()
+        scope.cancel()
         thread.quitSafely()
         super.onDestroy()
     }

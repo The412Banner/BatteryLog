@@ -1,18 +1,11 @@
 package com.the412banner.batterylog
 
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
-import android.os.BatteryManager
 import java.io.File
-import kotlin.math.abs
 
 /**
- * Runtime / charge-time estimates. Two sources, blended:
- *  - INSTANT: the fuel gauge's own time_to_empty_avg / time_to_full_* (live,
- *    no history needed) read from sysfs (root fallback).
- *  - LEARNED: average %/hr from this app's recorded discharge & charge runs —
- *    these reflect *your* real usage and improve after a few cycles.
+ * Time-left / time-to-full. Two sources:
+ *  - the fuel gauge's own estimate (time_to_empty_avg / time_to_full_now / time_to_full_avg in sysfs);
+ *  - the learned average %/hour from the last 14 days of logs ([Analysis.rates]).
  */
 object Estimates {
 
@@ -21,98 +14,67 @@ object Estimates {
     data class Result(
         val charging: Boolean,
         val capacity: Int,
-        val toEmptyMin: Int?,        // instant (fuel gauge)
-        val toFullMin: Int?,         // instant (fuel gauge)
-        val dischPctPerH: Double?,   // learned
-        val chgPctPerH: Double?,     // learned
-        val dischRuns: Int,
-        val chgRuns: Int
+        val gaugeToEmptyMin: Int?,
+        val gaugeToFullMin: Int?,
+        val rates: Analysis.Rates?,
     ) {
-        /** Learned full-discharge runtime (100->0), minutes. */
-        val learnedFullRuntimeMin: Int? get() =
-            dischPctPerH?.takeIf { it > 0 }?.let { (100.0 / it * 60).toInt() }
-        /** Learned remaining time at the current level, minutes. */
         val learnedRemainingMin: Int? get() =
-            dischPctPerH?.takeIf { it > 0 }?.let { (capacity / it * 60).toInt() }
-        /** Learned time to reach 100% from the current level, minutes. */
+            rates?.drainPctPerH?.takeIf { it > 0 }?.let { (capacity / it * 60).toInt() }
+        val learnedFullRuntimeMin: Int? get() =
+            rates?.drainPctPerH?.takeIf { it > 0 }?.let { (100.0 / it * 60).toInt() }
         val learnedToFullMin: Int? get() =
-            chgPctPerH?.takeIf { it > 0 }?.let { ((100 - capacity) / it * 60).toInt() }
+            rates?.chargePctPerH?.takeIf { it > 0 }?.let { ((100 - capacity) / it * 60).toInt() }
+
+        /** Best single figure for the headline: the gauge when it has one, else the learned average. */
+        val headlineMin: Int? get() =
+            if (charging) gaugeToFullMin ?: learnedToFullMin else gaugeToEmptyMin ?: learnedRemainingMin
     }
 
-    // ---- learned-average cache (parsing logs every tick would be wasteful) ----
-    private var cacheAt = 0L
-    private var cachedDisch: Double? = null
-    private var cachedChg: Double? = null
-    private var cachedDischN = 0
-    private var cachedChgN = 0
+    @Volatile private var times: Pair<Int?, Int?> = null to null
+    @Volatile private var timesAt = 0L
 
-    fun compute(ctx: Context): Result {
-        val bm = ctx.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
-        val sticky = ctx.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-        val statusInt = sticky?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
-        val charging = statusInt == BatteryManager.BATTERY_STATUS_CHARGING ||
-                       statusInt == BatteryManager.BATTERY_STATUS_FULL
-        val cap = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY).coerceIn(0, 100)
+    /** Fuel-gauge estimates in minutes (cached 20 s). */
+    fun gaugeTimes(): Pair<Int?, Int?> {
+        if (System.currentTimeMillis() - timesAt < 20_000) return times
+        var empty = node("time_to_empty_avg") ?: node("time_to_empty_now")
+        var full = node("time_to_full_now") ?: node("time_to_full_avg")
+        if ((empty == null || full == null) && RootHelper.knownRoot()) {
+            val out = RootHelper.run(
+                "for n in time_to_empty_avg time_to_empty_now time_to_full_now time_to_full_avg; do " +
+                    "echo \"\$n=\$(cat $SYS/\$n 2>/dev/null)\"; done",
+                timeoutSec = 10,
+            ).out
+            fun grab(n: String) = Regex("$n=(-?\\d+)").find(out)?.groupValues?.get(1)?.toIntOrNull()?.takeIf(::plausible)
+            empty = empty ?: grab("time_to_empty_avg") ?: grab("time_to_empty_now")
+            full = full ?: grab("time_to_full_now") ?: grab("time_to_full_avg")
+        }
+        times = empty?.div(60) to full?.div(60)
+        timesAt = System.currentTimeMillis()
+        return times
+    }
 
-        val (toEmpty, toFull) = readTimes()
-        refreshLearned(ctx)
+    private fun node(n: String): Int? =
+        runCatching { File("$SYS/$n").readText().trim().toIntOrNull() }.getOrNull()?.takeIf(::plausible)
 
+    /** Seconds; reject sentinels (-1, 0) and anything over 72 h. */
+    private fun plausible(sec: Int): Boolean = sec in 60..(72 * 3600)
+
+    fun compute(info: BatteryInfo, rates: Analysis.Rates?): Result {
+        val (e, f) = gaugeTimes()
         return Result(
-            charging, cap, toEmpty, toFull,
-            cachedDisch, cachedChg, cachedDischN, cachedChgN
+            charging = info.onCharger,
+            capacity = info.capacityPct.coerceIn(0, 100),
+            gaugeToEmptyMin = if (!info.onCharger) e else null,
+            gaugeToFullMin = if (info.onCharger && info.capacityPct < 100) f else null,
+            rates = rates,
         )
     }
 
-    /** Fuel-gauge instant estimates, seconds -> minutes. Sysfs first, one root batch as fallback. */
-    private fun readTimes(): Pair<Int?, Int?> {
-        var empty = readNodeDirect("time_to_empty_avg")
-        var full = readNodeDirect("time_to_full_now")?.takeIf { it > 0 }
-            ?: readNodeDirect("time_to_full_avg")
-
-        if ((empty == null || full == null) && RootHelper.hasRoot()) {
-            val out = RootHelper.run(
-                "for n in time_to_empty_avg time_to_full_now time_to_full_avg; do " +
-                "echo \"\$n=\$(cat $SYS/\$n 2>/dev/null)\"; done"
-            ).out
-            fun grab(n: String) = Regex("$n=(-?\\d+)").find(out)?.groupValues?.get(1)?.toIntOrNull()
-            empty = empty ?: grab("time_to_empty_avg")
-            full = full ?: (grab("time_to_full_now")?.takeIf { it > 0 } ?: grab("time_to_full_avg"))
-        }
-        return secToMin(empty) to secToMin(full)
-    }
-
-    private fun readNodeDirect(n: String): Int? =
-        runCatching { File("$SYS/$n").readText().trim().toIntOrNull() }.getOrNull()
-
-    // Reject sentinels (-1, 0) and absurd values (> 48 h).
-    private fun secToMin(s: Int?): Int? = s?.takeIf { it in 1..(48 * 3600) }?.div(60)
-
-    private fun refreshLearned(ctx: Context) {
-        if (cacheAt != 0L && System.currentTimeMillis() - cacheAt < 30_000) return
-        val d = ArrayList<Double>()
-        val c = ArrayList<Double>()
-        LogStore.logs(ctx).take(25).forEach { f ->
-            val rows = LogStore.parse(f)
-            if (rows.size < 2) return@forEach
-            val a = rows.first(); val b = rows.last()
-            val durH = (b.epoch - a.epoch) / 3_600_000.0
-            val dCap = b.cap - a.cap
-            if (durH < 0.05) return@forEach          // < 3 min — too short to trust
-            val rate = abs(dCap) / durH
-            if (abs(dCap) < 5 || rate <= 0 || rate > 200) return@forEach
-            if (dCap < 0) d += rate else if (dCap > 0) c += rate
-        }
-        cachedDisch = d.takeIf { it.isNotEmpty() }?.average()
-        cachedChg = c.takeIf { it.isNotEmpty() }?.average()
-        cachedDischN = d.size
-        cachedChgN = c.size
-        cacheAt = System.currentTimeMillis()
-    }
-
-    /** "2h 28m" / "47m". */
+    /** "8h 05m" / "47m" / "—". */
     fun fmtMin(min: Int?): String {
         if (min == null || min <= 0) return "—"
-        val h = min / 60; val m = min % 60
-        return if (h > 0) "${h}h ${m}m" else "${m}m"
+        val h = min / 60
+        val m = min % 60
+        return if (h > 0) "${h}h %02dm".format(m) else "${m}m"
     }
 }

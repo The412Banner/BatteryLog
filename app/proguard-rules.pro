@@ -1,1 +1,2 @@
-# Bare-bones app; no special rules needed.
+# kotlinx-serialization, Compose, WorkManager and OkHttp ship their own consumer rules.
+-keepattributes *Annotation*, InnerClasses

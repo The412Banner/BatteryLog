@@ -2,66 +2,135 @@ name: Build BatteryLog APK
 
 on:
   push:
-    branches: [ main, master ]
-    paths:
-      - 'app/**'
-      - 'gradle/**'
-      - '*.gradle.kts'
-      - 'gradle.properties'
-      - '.github/workflows/build-app.yml'
-  pull_request:
+    branches: [main, "feat/**", "fix/**"]
+    paths-ignore: ["PROGRESS_LOG.md", "README.md", "release-notes/**"]
   workflow_dispatch:
+    inputs:
+      release:
+        description: "Publish a GitHub release with the APK"
+        type: boolean
+        default: false
+      tag:
+        description: "Release tag, e.g. v2.0.0-pre1 (release-notes/<tag>.md must exist)"
+        type: string
+        default: ""
+      prerelease:
+        description: "Mark the release as a pre-release"
+        type: boolean
+        default: true
 
 permissions:
   contents: write
 
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
-    runs-on: ubuntu-latest
+    name: Test, build, sign
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
 
-      - name: Build debug APK
-        run: ./gradlew --no-daemon assembleDebug
+      - name: Logic tests
+        run: ./gradlew --no-daemon :app:testReleaseUnitTest --tests 'com.the412banner.batterylog.LogicTest'
 
-      - name: Sign with testkey (force v1 + v2 + v3)
+      - name: Build APK
+        run: ./gradlew --no-daemon :app:assembleRelease --stacktrace
+
+      - name: Sign (v1 + v2 + v3, AOSP test key) and verify
         run: |
-          mkdir -p out
-          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort | tail -1)
-          "$BT/zipalign" -p -f 4 app/build/outputs/apk/debug/app-debug.apk out/aligned.apk
-          # --min-sdk-version 21 forces apksigner to embed all three blocks;
-          # without it, minSdk 29 makes it emit v3 only (v1/v2 deemed unnecessary).
-          "$BT/apksigner" sign \
-            --key app/testkey.pk8 --cert app/testkey.x509.pem \
-            --min-sdk-version 21 \
-            --v1-signing-enabled true \
-            --v2-signing-enabled true \
-            --v3-signing-enabled true \
-            --out out/BatteryLog-debug.apk out/aligned.apk
-          rm -f out/aligned.apk out/BatteryLog-debug.apk.idsig
-          sha256sum out/BatteryLog-debug.apk | tee out/BatteryLog-debug.apk.sha256
+          set -e
+          BT="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+          IN=app/build/outputs/apk/release/app-release.apk
+          APK=app/build/outputs/apk/release/app-release-signed.apk
+          "$BT/zipalign" -p -f 4 "$IN" aligned.apk
+          # --min-sdk-version 21 makes apksigner embed v1 + v2 as well (minSdk 29 alone gives v3 only).
+          "$BT/apksigner" sign --key app/testkey.pk8 --cert app/testkey.x509.pem \
+            --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --min-sdk-version 21 \
+            --out "$APK" aligned.apk
+          "$BT/apksigner" verify --verbose --print-certs --min-sdk-version 21 "$APK" | tee verify.txt
+          grep -q "Verified using v1 scheme (JAR signing): true" verify.txt
+          grep -q "Verified using v2 scheme (APK Signature Scheme v2): true" verify.txt
+          grep -q "Verified using v3 scheme (APK Signature Scheme v3): true" verify.txt
+          grep -qi "SHA-256 digest: a40da80a59d170caa950cf15c18c454d47a39b26989d8b640ecd745ba71bf5dc" verify.txt
+          "$BT/aapt2" dump badging "$APK" | grep -E "^package:|^application-label:|^sdkVersion|^targetSdkVersion"
 
-      - name: Verify signature (testkey, v1/v2/v3)
+      - name: Name APK
+        id: apk
         run: |
-          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort | tail -1)
-          # Verify across the same SDK range the signing used, otherwise apksigner
-          # only reports v3 (v1/v2 are irrelevant above API 27 and shown false).
-          "$BT/apksigner" verify --min-sdk-version 21 --verbose --print-certs out/BatteryLog-debug.apk | tee out/signature.txt
-          grep -q "v1 scheme (JAR signing): true" out/signature.txt
-          grep -q "v2 scheme (APK Signature Scheme v2): true" out/signature.txt
-          grep -q "v3 scheme (APK Signature Scheme v3): true" out/signature.txt
+          set -e
+          VER=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          SHA=${GITHUB_SHA::8}
+          NAME="BatteryLog-v${VER}-${SHA}.apk"
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release-signed.apk "dist/$NAME"
+          (cd dist && sha256sum "$NAME" > "$NAME.sha256" && cat "$NAME.sha256")
+          ls -la dist
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
 
-      - name: Upload artifact
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BatteryLog-apk
+          path: dist/
+          retention-days: 30
+
+      - name: Restore Robolectric Android runtime
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: robolectric-android-all-instrumented-15-robolectric-13954326-i7
+
+      - name: Fetch Robolectric Android runtime (with retries)
+        continue-on-error: true
+        run: |
+          set -e
+          V=15-robolectric-13954326-i7
+          DIR="$HOME/.m2/repository/org/robolectric/android-all-instrumented/$V"
+          BASE="https://repo1.maven.org/maven2/org/robolectric/android-all-instrumented/$V"
+          mkdir -p "$DIR"
+          for f in "android-all-instrumented-$V.jar" "android-all-instrumented-$V.pom"; do
+            [ -s "$DIR/$f" ] || curl -fsSL --retry 6 --retry-delay 20 --retry-all-errors -o "$DIR/$f" "$BASE/$f"
+          done
+          ls -la "$DIR"
+
+      - name: Screenshots (sample data)
+        continue-on-error: true
+        run: ./gradlew --no-daemon :app:testDebugUnitTest --tests 'com.the412banner.batterylog.ScreenshotTest'
+
+      - name: Upload screenshots
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: BatteryLog-debug
-          path: out/*
+          name: screenshots
+          path: |
+            app/build/screenshots/
+            app/build/reports/tests/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Publish release
+        if: inputs.release && inputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          NOTES="release-notes/${{ inputs.tag }}.md"
+          test -f "$NOTES"
+          FLAGS=""
+          if [ "${{ inputs.prerelease }}" = "true" ]; then FLAGS="--prerelease"; fi
+          gh release create "${{ inputs.tag }}" dist/* \
+            --target "$GITHUB_SHA" \
+            --title "BatteryLog ${{ inputs.tag }}" \
+            --notes-file "$NOTES" $FLAGS

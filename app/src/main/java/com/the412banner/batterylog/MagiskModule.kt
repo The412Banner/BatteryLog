@@ -30,7 +30,7 @@ object MagiskModule {
     )
 
     fun status(): Status {
-        if (!RootHelper.hasRoot()) return Status(false, false, false, false, null)
+        if (!RootHelper.rootCached()) return Status(false, false, false, false, null)
         // [d]/[D]/run markers so the grep never matches itself.
         val script = """
             D="$DIR"

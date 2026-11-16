@@ -1,0 +1,125 @@
+package com.the412banner.batterylog
+
+import com.the412banner.batterylog.update.AppVersion
+import com.the412banner.batterylog.update.GhAsset
+import com.the412banner.batterylog.update.GhRelease
+import com.the412banner.batterylog.update.UpdateRepository
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class LogicTest {
+
+    private val header = BatteryLogService.CSV_HEADER
+
+    /** App rows (lowercase status/plugged) and boot-sampler rows (kernel status text, "boot"). */
+    private fun csv(rows: List<String>) = (listOf(header) + rows).joinToString("\n") + "\n"
+
+    @Test
+    fun parsesAppAndBootRows() {
+        val text = csv(
+            listOf(
+                "1794777618000,2026-11-15T16:20:18,28600,9,charging,boot,3893,3904536,842767,0,250,good",
+                "1794777644000,2026-11-15T16:20:44,58730,10,not charging,boot,3824,2063660,863722,0,260,good",
+                "1794777674000,2026-11-15T16:21:14,88730,10,discharging,unplugged,3800,-1500000,860000,0,261,good",
+                "garbage,line",
+                "1794777704000,2026-11-15T16:21:44,118730,10,Full,usb,4380,10000,860000,,262,good",
+                "1794777734000,2026-11-15T16:22:14,1187", // half-written last line after a shut-off
+            ),
+        )
+        val p = CsvLog.parse(text)
+        val s = p.set
+        assertEquals(4, s.size)
+        assertEquals(28600L, p.firstUptimeMs)
+        assertEquals(SampleSet.ST_CHARGING, s.status[0])
+        assertEquals(SampleSet.ST_NOT_CHARGING, s.status[1])
+        assertEquals(SampleSet.ST_DISCHARGING, s.status[2])
+        assertEquals(SampleSet.ST_FULL, s.status[3])
+        assertEquals(SampleSet.PL_BOOT, s.plug[0])
+        assertEquals(SampleSet.PL_UNPLUGGED, s.plug[2])
+        assertEquals(SampleSet.PL_USB, s.plug[3])
+        assertEquals(-1500000, s.ua[2])
+        assertEquals(26.1f, s.tempC(2), 0.01f)
+        assertTrue(s.onCharger(0))
+        assertTrue(!s.onCharger(2))
+        // 3.8 V x -1.5 A = -5.7 W
+        assertEquals(-5.7f, s.watts(2), 0.01f)
+    }
+
+    @Test
+    fun flipsPositiveDischargeCurrent() {
+        val rows = (0 until 10).map { i ->
+            "${1_000_000L + i * 30_000},x,0,${90 - i},discharging,unplugged,3900,${800000 + i},0,0,300,good"
+        }
+        val s = CsvLog.parse(csv(rows)).set
+        assertTrue(s.ua.all { it < 0 })
+    }
+
+    private fun discharge(from: Int, to: Int, start: Long, msPerPct: Long = 240_000, uahPerPct: Int = 84_000): SampleSet {
+        val b = SampleSet.Builder()
+        var q = 8_400_000
+        for ((k, pct) in (from downTo to).withIndex()) {
+            b.add(start + k * msPerPct, pct, 4300 - (from - pct) * 6, -1_500_000, q, 300, SampleSet.ST_DISCHARGING, SampleSet.PL_UNPLUGGED)
+            q -= uahPerPct
+        }
+        return b.build()
+    }
+
+    @Test
+    fun ratesAndSession() {
+        // 1 % every 4 minutes = 15 %/h.
+        val s = discharge(100, 60, 0L)
+        val r = Analysis.rates(s)
+        assertNotNull(r.drainPctPerH)
+        assertEquals(15.0, r.drainPctPerH!!, 0.01)
+        assertNull(r.chargePctPerH)
+        val sess = Analysis.currentSession(s)!!
+        assertTrue(!sess.charging)
+        assertEquals(100, sess.fromPct)
+        assertEquals(60, sess.nowPct)
+    }
+
+    @Test
+    fun measuredCapacityFromChargeCounter() {
+        // 84 mAh per % → 8400 mAh full.
+        val m = Analysis.measuredCapacity(discharge(100, 50, 0L))
+        assertNotNull(m)
+        assertEquals(8400, m!!.fullMah)
+    }
+
+    @Test
+    fun chargingBandsSplitOnGaps() {
+        val b = SampleSet.Builder()
+        for (i in 0 until 5) b.add(i * 30_000L, 50 + i, 4000, 2_000_000, 0, 300, SampleSet.ST_CHARGING, SampleSet.PL_AC)
+        for (i in 0 until 5) b.add(600_000L + i * 30_000L, 55, 4000, -1_000_000, 0, 300, SampleSet.ST_DISCHARGING, SampleSet.PL_UNPLUGGED)
+        for (i in 0 until 3) b.add(10_000_000L + i * 30_000L, 55 + i, 4000, 2_000_000, 0, 300, SampleSet.ST_CHARGING, SampleSet.PL_AC)
+        val bands = Analysis.chargingBands(b.build())
+        assertEquals(2, bands.size)
+        assertEquals(0L, bands[0].first)
+        assertEquals(120_000L, bands[0].last)
+    }
+
+    @Test
+    fun versionsCompare() {
+        val v = { s: String -> AppVersion.parse(s)!! }
+        assertTrue(v("v2.0.0") > v("v2.0.0-pre3"))
+        assertTrue(v("2.0.0-pre10") > v("2.0.0-pre2"))
+        assertTrue(v("2.0.0-pre1") > v("1.6.0"))
+        assertTrue(v("1.6.0") > v("v1.5.0"))
+    }
+
+    @Test
+    fun picksNewestAllowedRelease() {
+        fun rel(tag: String, pre: Boolean) = GhRelease(
+            tag = tag, prerelease = pre,
+            assets = listOf(GhAsset("BatteryLog-$tag.apk", "https://x/$tag.apk"), GhAsset("BatteryLog-$tag.apk.sha256", "https://x/$tag.sha")),
+        )
+        val list = listOf(rel("v1.6.0", false), rel("v2.0.0-pre2", true), rel("v2.0.0-pre1", true))
+        assertEquals("v1.6.0", UpdateRepository.pick(list, includePrereleases = false)!!.tag)
+        val pre = UpdateRepository.pick(list, includePrereleases = true)!!
+        assertEquals("v2.0.0-pre2", pre.tag)
+        assertEquals("BatteryLog-v2.0.0-pre2.apk.sha256", pre.checksum!!.name)
+    }
+}
