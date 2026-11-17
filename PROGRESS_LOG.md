@@ -19,6 +19,7 @@ Newest entry first. Times are US Eastern.
 5. Charge alarm + high-temp + low-battery alerts; quick settings tile; log tools (share, delete, auto-clean); settings (interval, °C/°F, theme); report as a clean page.
 6. Fixes found 11-16 on the Elite (1S, 8400 mAh): SoH used the Pocket FIT 4139 mAh constant; "voltage sag" hard-coded for a 2S pack (false alarm on 1S); charge-speed slider treated a µA current node as a 0..max level (0 could stop charging); History parsed every log on the UI thread; boot sampler + app logged the same time twice.
 **Built:** f49ec812 (full rewrite: Compose UI, charts, updater, alerts, tile, fixes; ~4.5k lines) — CI-only, no local SDK.
-**CI:** 43983706747 (f49ec812) running.
+**CI:** 43983706747 (f49ec812) FAILED in compile: 2× `p.firstUptime` (field is `firstUptimeMs`). Fix 62da847a (+ notification Stop now saves mode Off, README 2.0, pre1 notes draft) → CI 43984108246 running.
+**User ~19:10 EST:** "install when done" → install this build on the Elite once CI is green and screenshots look right (stage in /sdcard/Download with hash check first, logcat check after).
 **Device test:** — (not installed; install only after the user's yes).
 **Decisions (mine, changeable):** release build (R8, not debuggable) instead of the old debug build, same app ID `com.the412banner.batterylog.debug`; debug builds get `.dev` suffix; version stays 1.6.0/vc8 until the release cut; alerts run only while the service runs (Auto or Recording); tile tap opens the app; auto-delete default Never.
