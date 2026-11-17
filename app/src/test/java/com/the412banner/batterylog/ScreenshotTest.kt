@@ -66,8 +66,8 @@ class ScreenshotTest {
                 val d = 0.075 * load
                 pct = (pct - d).coerceAtLeast(2.0); q -= 84_000.0 * d; ua = -(900_000 * load).toInt()
             }
-            val mv = (3_550 + pct * 7.5 + if (charging) 120 else -40 * load).toInt()
-            val temp = (290 + 60 * load + if (charging) 55 else 0).toInt()
+            val mv = (3_550.0 + pct * 7.5 + (if (charging) 120.0 else -40.0 * load)).toInt()
+            val temp = (290.0 + 60.0 * load + (if (charging) 55.0 else 0.0)).toInt()
             b.add(
                 t, pct.toInt(), mv, ua, q.toInt(), temp,
                 if (charging) SampleSet.ST_CHARGING else SampleSet.ST_DISCHARGING,
