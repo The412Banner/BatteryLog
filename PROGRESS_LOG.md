@@ -3,7 +3,8 @@
 Newest entry first. Times are US Eastern.
 
 ## Resume point
-- Releasing **v2.0.0 stable** (user 19:17 EST). Release-cut commit on feat/redesign-2.0 → CI → main FF (backup ref first) → release workflow on main. Installed on the Elite: 1611739d (reads 1.6.0).
+- **v2.0.0 STABLE = Latest** (published 2026-11-16 19:30:20 EST, tag → 21cc13320fa02bdbbd69157d269441b4e2e86a16 = release run 43987268286 headSha); assets BatteryLog-v2.0.0-21cc1332.apk (sha256 b7917a08…, = .sha256, AOSP testkey a40da80a, vc 9) + .sha256; notes = release-notes/v2.0.0.md. main = 21cc1332 (+ log commits); backup refs/backup/20261116/main-before-redesign-2.0 = 0b7367d2.
+- NOW: updating the Elite 1611739d (reads 1.6.0) → v2.0.0 through the app's Settings → Updates (user asked). Rollback APKs: /sdcard/Download/BatteryLog-backup-20261116/.
 - Releases: dev builds = Actions artifacts / `-preN` prereleases only; stable only when the user says so. Install on a device only after the user's explicit yes.
 
 ## Lessons learned (don't repeat these)
@@ -15,6 +16,7 @@ Newest entry first. Times are US Eastern.
 **Release-cut commit:** versionCode 8→9, versionName 1.6.0→2.0.0; release-notes/v2.0.0.md (was the pre1 draft); README gets a 3×3 screenshot grid (docs/screenshots/*.png, cropped from CI 43984381077 ScreenshotTest renders, sample data, labelled as such). Release notes carry no images (the in-app Updates screen shows notes as text).
 **Done so far:** CI 43986574675 GREEN on 21cc1332 → backup ref refs/backup/20261116/main-before-redesign-2.0 = 0b7367d2 (pushed) → main fast-forwarded to 21cc1332 (tree == tested build) → push build 43987258095 + release run 43987268286 (workflow_dispatch, headSha 21cc1332, tag v2.0.0, prerelease=false) running.
 **User ~19:30 EST:** "update it through the app when it's released" → after the release: open BatteryLog on the Elite, Settings → Updates → Download & install (announce takeover, save first, Termux back after).
+**RELEASED 19:30:20 EST:** v2.0.0 Latest, not prerelease; tag == 21cc1332 == built commit; asset sha256 b7917a088def… matches .sha256; signer a40da80a; notes == file (trailing newline only).
 **Plan:** CI green on feat → backup ref refs/backup/20261116/main-before-redesign-2.0 (= 0b7367d2) → FF main → workflow_dispatch release on main (tag v2.0.0, not prerelease) → verify tag == built commit, assets (APK + .sha256), notes, Latest. Then the installed 1611739d build (reads 1.6.0) can update to v2.0.0 through the in-app updater = first real updater test.
 
 ## 2026-11-16 ~18:30 EST — 2.0 redesign started (feat/redesign-2.0)
