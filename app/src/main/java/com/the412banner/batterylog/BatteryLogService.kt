@@ -154,7 +154,12 @@ class BatteryLogService : Service() {
         // startForegroundService() requires startForeground() even when we stop right away.
         ensureForeground()
         when (mode) {
-            LogMode.Off -> { fullStop(); return START_NOT_STICKY }
+            LogMode.Off -> {
+                // Also covers the notification's Stop button, which comes straight here.
+                if (action == ACTION_STOP) settings.update { it.copy(mode = LogMode.Off) }
+                fullStop()
+                return START_NOT_STICKY
+            }
             LogMode.Auto -> handler.post { startAuto() }
             LogMode.Manual -> handler.post { startManual(fresh = action != ACTION_RESTORE || !_state.value.recording) }
         }

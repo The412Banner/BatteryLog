@@ -1,148 +1,110 @@
 # BatteryLog
 
-An Android app to monitor battery discharge in the background, surface
-whole-life battery health, estimate runtime/charge time, and (with root)
-control charge speed/limit. Built for the **AYANEO Pocket FIT** random-shutoff
-investigation — a degraded 2S pack (~60% SoH) with a suspected PMIC
-under-voltage (UVLO) cutoff under gaming load.
+An Android app that logs your battery in the background and shows it in clear, interactive charts:
+level, power, current, voltage and temperature, battery health, time left, and a report for every log.
+It started as a tool to chase random shut-offs on the AYANEO Pocket FIT and works on any Android 10+ device.
 
-- **Package:** `com.the412banner.batterylog` (debug builds: `…​.debug`)
-- **UI:** Kotlin, classic Android Views (no Compose), Material 3 DayNight
-- **Min/Target SDK:** 29 / 34
-- **Root:** not required for monitoring/reports; required for the boot module
-  and charge control.
+- **Package:** `com.the412banner.batterylog.debug` (kept from the first releases so updates install over them)
+- **UI:** Kotlin, Jetpack Compose, Material 3 (light, dark, black, optional wallpaper colours)
+- **Android:** 10 (API 29) or newer, target API 36
+- **Root:** not needed for logging, charts and reports. Needed for the boot logger and charge control.
 
----
+## Screens
 
-## Features
+**Now**: an animated battery ring and the current state (charging, watts). Time left from the system
+estimate and from your own average. Live tiles for power, current, voltage and temperature, each with a
+30-minute trend line. A "since last charge" summary, the last 24 hours as a chart, and the logging controls.
 
-### Monitoring
-Samples the battery **every 30 s** to a CSV in the app's external files dir
-(`Android/data/com.the412banner.batterylog(.debug)/files/logs/`). Runs as a
-foreground service of type `specialUse` (deliberately **not** `dataSync`, which
-carries Android 14's ~6 h/day cap that would kill a long overnight drain). Holds
-a `PARTIAL_WAKE_LOCK` so sampling continues with the screen off / during doze,
-and `fsync()`s every row so the tail survives a hard shut-off.
+**History**: one large chart for 6 h, 24 h, 7 days, 30 days or 90 days, switchable between level, power,
+current, voltage and temperature. Charging periods are shaded. Below it: time on battery, % used and
+charged, drain rate, average power, lowest voltage, temperature range, and the list of every log.
 
-Two ways to run it:
+**Log details**: synced charts for one log. Dragging on one chart shows the same moment on all of them,
+and zooming one zooms all. Below the charts: a report covering capacity used, measured full capacity,
+health against the design capacity, voltage (including per cell and a voltage-per-10 % curve),
+average/peak draw and charging power, speed, temperature, and findings (possible shut-off, voltage sag,
+hot battery, low capacity). You can share the report, share the CSV or delete the log.
 
-- **Auto mode** *(recommended)* — arm it once. The service stays resident and
-  watches the charger: the instant you **unplug** it opens a fresh
-  *discharge-only* log; when you **plug back in** it finalises that log and waits
-  for the next unplug. It reacts inside the already-running service rather than
-  cold-starting from a broadcast, which sidesteps Android 14's restriction on
-  starting a foreground service from a background event.
-- **Manual** — explicit **Start / Stop monitoring** buttons.
+**Health**: health ring (full capacity vs design), charge cycles, capacity measured from your own logs,
+and battery details (model, technology, cells, charge and resting voltage). Also charge limit and charge
+speed (root), the boot logger, and log storage (share all logs as a zip, delete old logs).
 
-Either way it auto-stops cleanly when the battery reaches 0%.
+**Settings**: theme, °C/°F, record interval (15/30/60/120 s), resume after restart, auto-delete old logs,
+alerts, updates.
 
-### Estimates (live, on the main screen)
-- **Time remaining** at the current %.
-- **Full-charge runtime** (100 → 0%).
-- **Time to 100%** while charging.
+### Charts
+Smooth curves with a gradient fill. When zoomed out, a light band shows the min/max inside each point.
+Charts animate in when the range or metric changes.
+- **Drag** sideways to read the exact value and time
+- **Tap** to read a point
+- **Pinch** to zoom, two-finger drag to pan
+- **Double-tap** to reset
 
-Each blends two sources: the **fuel gauge's own instant estimate**
-(`time_to_empty_avg` / `time_to_full_now` / `time_to_full_avg`) and a
-**learned average %/hr** computed from your recorded discharge and charge runs.
-The learned figures reflect *your* real usage and sharpen after a few cycles;
-the card shows how many runs it has learned from.
+Gaps when nothing was logged are left empty, not bridged with a straight line.
 
-### Diagnostic report
-**Generate report** reads the latest CSV and writes a human-readable
-`*_report.txt` next to it (also shown on screen). It computes:
+## Logging
 
-- Measured usable capacity from the `charge_counter` delta, extrapolated to a
-  full 0→100% → **State of Health vs the 4139 mAh design and 2430 mAh
-  reported-full** figures.
-- Voltage start / end / **min (and at what %)** / max — the UVLO-sag tell.
-- Average & peak discharge current; temperature min / max / avg.
-- Discharge rate (%/hr), projected 100→0 runtime, and a per-10% voltage curve.
-- An **Anomalies** section: early cutoff (ended well above 0% while not
-  charging), voltage sag (≤ ~6.2 V above 5%), and high temperature (≥ 48 °C).
+- **Auto mode** (recommended): stays running and starts a new log every time you unplug the charger,
+  then closes it when you plug back in.
+- **Record now**: logs right away until you stop it (or the battery reaches 0 %).
+- A sample is written every 30 s by default and synced to disk each time, so the end of a log survives
+  a hard shut-off.
+- After a reboot (if "Resume after restart" is on) or an app update, the last mode starts again.
+- The logger runs as a `specialUse` foreground service, not `dataSync`, so Android 14+ doesn't stop it
+  after 6 hours.
 
-**Share report** sends the report text via any app.
+**Alerts** (while Auto or Recording is on): a charge alarm at a chosen %, a low-battery alert, and a
+hot-battery alert.
 
-### History & cycles
-A dedicated screen with:
+**Quick settings tile**: shows the level and live watts; tap to open the app.
 
-- A **Lifetime / Battery Health** card read straight from the kernel fuel gauge
-  (sysfs, with a root fallback): **charge cycles since the battery was
-  manufactured**, learned-full vs design capacity, **State of Health**, capacity
-  lost, open-circuit / max voltage, technology and model. These persist since
-  manufacture — independent of when the app was installed.
-- A battery/voltage **graph** plus a tappable list of every recorded run, each
-  with its own summary (direction, Δ%, mAh consumed, voltage min, temp range,
-  rate).
+### Boot logger (root, optional)
+**Health → Boot logger → Install** adds a small Magisk module, `batterylog_boot`. It starts a shell
+logger at every boot that writes the same CSV columns, so logs cover the minutes before a shut-off even
+if the app never opened. Where the app is also logging, the app's rows are used and the boot logger's
+rows for the same time are skipped.
 
-### Charge control *(root)*
-Reads and (with root) writes the kernel charge-control nodes:
+## Storage
 
-- **Charge speed** — `charge_control_limit` (0 = full speed; higher = lower
-  current / cooler charging), bounded by `charge_control_limit_max`.
-- **Charge limit** — stop charging at 100 / 90 / 80% via
-  `charge_control_start_threshold` / `charge_control_end_threshold`.
+Logs are saved in `/sdcard/BatteryLog/logs` once **All files access** is allowed, so they survive an
+uninstall. Without it they go to the app's own folder.
 
-Nodes are world-readable (so current state shows without root); writes go
-through `su` and are **read back to confirm they stuck**. Enforcement ultimately
-depends on the charger firmware — some devices expose the interface but ignore
-it.
-
-### Boot persistence (Magisk module, optional, root)
-**Install boot module** drops a small Magisk module at
-`/data/adb/modules/batterylog_boot/`. Its `service.sh` (late_start) launches a
-self-contained shell `sampler.sh` at **every boot**, writing the *same* CSV
-columns (with `boot` in the `plugged` field) into the app's log dir — so logging
-resumes after a reboot and ambushes the next random shut-off. The same report
-parser handles those logs. **Remove boot module** uninstalls it.
-
-A **live indicator** at the bottom of the main screen verifies the module is
-installed *and* its sampler is actually running:
-🟢 running · 🔴 installed but not running · 🟡 disabled · ⚪ not installed / no root.
-
----
-
-## CSV format
-
-One header line then one row per 30 s sample:
-
+One header line, then one row per sample:
 ```
 epoch_ms,iso_time,uptime_ms,capacity_pct,status,plugged,
 voltage_mV,current_uA,charge_counter_uAh,energy_counter_nWh,temp_decideg,health
 ```
+`plugged` is `ac` / `usb` / `wireless` / `unplugged` for app rows and `boot` for boot-logger rows.
 
-The `plugged` field is `ac` / `usb` / `wireless` / `unplugged` for app-recorded
-rows and `boot` for rows written by the Magisk boot sampler.
+## Charge control (root)
 
----
+- **Charge limit**: stops charging at 90 / 85 / 80 % (100 = off), using
+  `charge_control_start/end_threshold`.
+- **Charge speed** (`charge_control_limit`): shown as a level (0 = full speed) or, on devices where the
+  node is a current, in amps. The app never sets a current node below 10 % of its maximum. Nodes the
+  kernel marks read-only (for example on the Pocket FIT Elite) are shown but can't be changed.
 
-## Usage — the discharge test
+Every change is read back to confirm it stuck. Whether the charger firmware enforces it depends on the
+device.
 
-1. Install the APK (see below).
-2. At 100%, open the app and tap **Auto** (or **Start monitoring**), then
-   unplug the charger.
-3. Let it drain to 0% (it auto-stops), or just game until it cuts off — the boot
-   module captures the run-up either way.
-4. Recharge, open the app, tap **Generate report**, and check the **Anomalies**
-   section and the voltage-at-% curve.
+## Updates
 
----
+The app checks this repository's GitHub releases every 12 hours (it can be turned off), and you can also
+check from **Settings → Updates**. It downloads the APK, checks its SHA-256 against the release's
+`.sha256` file, makes sure it is BatteryLog, and hands it to Android's installer. Test builds are offered
+only if "Include test builds" is on.
+
+Coming from 1.6.0 or older: install 2.0 once by hand. 1.6.0 has no updater, but 2.0 installs over it and
+keeps your logs. Every release is signed with the same AOSP test key (v1 + v2 + v3).
 
 ## Install
 
-Releases ship a debug-signed APK on the
-[Releases](https://github.com/The412Banner/BatteryLog/releases) page; CI also
-uploads it as the `BatteryLog-debug` artifact.
-
-> **First install of v1.2.0+ over an older build needs a one-time uninstall.**
-> The signing key changed to a stable committed debug keystore in v1.2.0.
-> From then on, updates install over the top and **preserve your collected
-> logs**.
-
----
+Download `BatteryLog-v<version>-<commit>.apk` from [Releases](https://github.com/The412Banner/BatteryLog/releases)
+and open it. On Samsung, if Android blocks the install, turn off **Auto Blocker** in Settings →
+Security and privacy.
 
 ## Build
 
-GitHub Actions builds the debug APK on every push that touches `app/**`
-(`./gradlew assembleDebug`, JDK 17) and uploads the `BatteryLog-debug` artifact.
-No local Gradle/SDK is required. The debug build is signed with the committed
-`app/debug.keystore` so signatures are stable across builds.
+GitHub Actions builds on every push (`./gradlew :app:assembleRelease`, JDK 17), signs with the AOSP test key
+using `apksigner` (v1 + v2 + v3), runs the unit tests, and renders every screen with sample data into the
+`screenshots` artifact (Robolectric + Roborazzi). No local Android SDK needed.

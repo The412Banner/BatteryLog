@@ -78,7 +78,7 @@ class LogRepository(private val context: Context) {
                 val old = map[f.absolutePath]
                 if (old == null || old.size != f.length() || old.modified != f.lastModified()) {
                     val p = parseLocked(f)
-                    map[f.absolutePath] = Analysis.summarize(f, p.set, p.firstUptime)
+                    map[f.absolutePath] = Analysis.summarize(f, p.set, p.firstUptimeMs)
                     changed = true
                 }
             }
@@ -183,7 +183,7 @@ class LogRepository(private val context: Context) {
         parsed[key]?.let { if (it.size == size && it.modified == mod) return CsvLog.Parsed(it.set, it.firstUptime) }
         val p = CsvLog.parse(f)
         parsed.remove(key)?.let { parsedRows -= it.set.size }
-        parsed[key] = Cached(size, mod, p.set, p.firstUptime)
+        parsed[key] = Cached(size, mod, p.set, p.firstUptimeMs)
         parsedRows += p.set.size
         // Keep roughly 800k rows (~20 MB) in memory; drop the least recently used files first.
         val it = parsed.entries.iterator()
