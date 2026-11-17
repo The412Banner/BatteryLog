@@ -4,7 +4,7 @@ Newest entry first. Times are US Eastern.
 
 ## Resume point
 - **v2.0.0 STABLE = Latest** (published 2026-11-16 19:30:20 EST, tag → 21cc13320fa02bdbbd69157d269441b4e2e86a16 = release run 43987268286 headSha); assets BatteryLog-v2.0.0-21cc1332.apk (sha256 b7917a08…, = .sha256, AOSP testkey a40da80a, vc 9) + .sha256; notes = release-notes/v2.0.0.md. main = 21cc1332 (+ log commits); backup refs/backup/20261116/main-before-redesign-2.0 = 0b7367d2.
-- NOW: updating the Elite 1611739d (reads 1.6.0) → v2.0.0 through the app's Settings → Updates (user asked). Rollback APKs: /sdcard/Download/BatteryLog-backup-20261116/.
+- **In-app updater DEVICE-PROVEN on the Elite (11-16 19:32 EST):** 1611739d (1.6.0) → v2.0.0 via Settings → Updates: found the release, downloaded, SHA-256 verified, installed. Installed base.apk sha256 b7917a08… = release asset, vc 9 / 2.0.0, installer of record = BatteryLog itself; crash buffer empty. Elite runs v2.0.0. Rollback APKs: /sdcard/Download/BatteryLog-backup-20261116/.
 - Releases: dev builds = Actions artifacts / `-preN` prereleases only; stable only when the user says so. Install on a device only after the user's explicit yes.
 
 ## Lessons learned (don't repeat these)
@@ -17,6 +17,9 @@ Newest entry first. Times are US Eastern.
 **Done so far:** CI 43986574675 GREEN on 21cc1332 → backup ref refs/backup/20261116/main-before-redesign-2.0 = 0b7367d2 (pushed) → main fast-forwarded to 21cc1332 (tree == tested build) → push build 43987258095 + release run 43987268286 (workflow_dispatch, headSha 21cc1332, tag v2.0.0, prerelease=false) running.
 **User ~19:30 EST:** "update it through the app when it's released" → after the release: open BatteryLog on the Elite, Settings → Updates → Download & install (announce takeover, save first, Termux back after).
 **RELEASED 19:30:20 EST:** v2.0.0 Latest, not prerelease; tag == 21cc1332 == built commit; asset sha256 b7917a088def… matches .sha256; signer a40da80a; notes == file (trailing newline only).
+**In-app update (19:31–19:33 EST, user: "update it through the app when it's released"):** announced takeover; ListAgents: no peers. topResumedActivity was **Discord** (not Termux) at 19:31:40, I opened BatteryLog anyway (user-requested) and checked the front app before each input. `appops set … REQUEST_INSTALL_PACKAGES allow` (was default; needed for the updater, left on). `am start … --es route updates` → Updates screen listed "BatteryLog v2.0.0 · 7:30 PM · 3.1 MB" + notes (screenshot OK). 19:32:25 I tapped "Download & install"; then **the user tapped Install** themselves, Android's confirm opened 19:32:31 and was accepted 19:32:33 (user), "installation completed" 19:32:33.442. Verified: vc9 / 2.0.0, base.apk sha256 b7917a08… = asset, installer = com.the412banner.batterylog.debug, crash buffer 0. User then opened BatteryLog from the launcher (19:32:36) and went back to Discord → I did NOT force Termux to the front (user had the device back; rule: no input once the user takes the device back). Temp files .bl-ui.xml/.bl-shot.png removed.
+**Proof level v2.0.0:** CI-green, released, installed via its own updater on the Elite, opened by the user twice without a crash. Not walked through feature by feature on the device (alerts, tile, charge limit write, boot-module install, share) — open items.
+
 **Plan:** CI green on feat → backup ref refs/backup/20261116/main-before-redesign-2.0 (= 0b7367d2) → FF main → workflow_dispatch release on main (tag v2.0.0, not prerelease) → verify tag == built commit, assets (APK + .sha256), notes, Latest. Then the installed 1611739d build (reads 1.6.0) can update to v2.0.0 through the in-app updater = first real updater test.
 
 ## 2026-11-16 ~18:30 EST — 2.0 redesign started (feat/redesign-2.0)
