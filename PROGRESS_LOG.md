@@ -13,6 +13,8 @@ Newest entry first. Times are US Eastern.
 **Why:** user (19:17 EST): "release as stable 2.0.0", then "also update the repo read me with app screenshots included".
 **Device state before the cut:** 1611739d installed on the Elite 19:09:59; the user opened it 19:15:23 (Displayed +98 ms); crash buffer empty, no FATAL/ANR through 19:16:52. Proof level of the redesign: CI-green + installed + opened by the user without a crash; features not walked through on the device by me.
 **Release-cut commit:** versionCode 8→9, versionName 1.6.0→2.0.0; release-notes/v2.0.0.md (was the pre1 draft); README gets a 3×3 screenshot grid (docs/screenshots/*.png, cropped from CI 43984381077 ScreenshotTest renders, sample data, labelled as such). Release notes carry no images (the in-app Updates screen shows notes as text).
+**Done so far:** CI 43986574675 GREEN on 21cc1332 → backup ref refs/backup/20261116/main-before-redesign-2.0 = 0b7367d2 (pushed) → main fast-forwarded to 21cc1332 (tree == tested build) → push build 43987258095 + release run 43987268286 (workflow_dispatch, headSha 21cc1332, tag v2.0.0, prerelease=false) running.
+**User ~19:30 EST:** "update it through the app when it's released" → after the release: open BatteryLog on the Elite, Settings → Updates → Download & install (announce takeover, save first, Termux back after).
 **Plan:** CI green on feat → backup ref refs/backup/20261116/main-before-redesign-2.0 (= 0b7367d2) → FF main → workflow_dispatch release on main (tag v2.0.0, not prerelease) → verify tag == built commit, assets (APK + .sha256), notes, Latest. Then the installed 1611739d build (reads 1.6.0) can update to v2.0.0 through the in-app updater = first real updater test.
 
 ## 2026-11-16 ~18:30 EST — 2.0 redesign started (feat/redesign-2.0)
