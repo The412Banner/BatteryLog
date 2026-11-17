@@ -3,11 +3,17 @@
 Newest entry first. Times are US Eastern.
 
 ## Resume point
-- Branch **feat/redesign-2.0** (off main 0b7367d2). CI-green build 1611739d (CI 43984381077) being installed on the Elite (user: "install when done"). Nothing released; Latest is still v1.6.0. Next: device test by the user, fix findings, then v2.0.0-pre1 prerelease on the user's word.
+- Releasing **v2.0.0 stable** (user 19:17 EST). Release-cut commit on feat/redesign-2.0 → CI → main FF (backup ref first) → release workflow on main. Installed on the Elite: 1611739d (reads 1.6.0).
 - Releases: dev builds = Actions artifacts / `-preN` prereleases only; stable only when the user says so. Install on a device only after the user's explicit yes.
 
 ## Lessons learned (don't repeat these)
 - (none yet)
+
+## 2026-11-16 ~19:20 EST — v2.0.0 stable release cut (feat/redesign-2.0 → main)
+**Why:** user (19:17 EST): "release as stable 2.0.0", then "also update the repo read me with app screenshots included".
+**Device state before the cut:** 1611739d installed on the Elite 19:09:59; the user opened it 19:15:23 (Displayed +98 ms); crash buffer empty, no FATAL/ANR through 19:16:52. Proof level of the redesign: CI-green + installed + opened by the user without a crash; features not walked through on the device by me.
+**Release-cut commit:** versionCode 8→9, versionName 1.6.0→2.0.0; release-notes/v2.0.0.md (was the pre1 draft); README gets a 3×3 screenshot grid (docs/screenshots/*.png, cropped from CI 43984381077 ScreenshotTest renders, sample data, labelled as such). Release notes carry no images (the in-app Updates screen shows notes as text).
+**Plan:** CI green on feat → backup ref refs/backup/20261116/main-before-redesign-2.0 (= 0b7367d2) → FF main → workflow_dispatch release on main (tag v2.0.0, not prerelease) → verify tag == built commit, assets (APK + .sha256), notes, Latest. Then the installed 1611739d build (reads 1.6.0) can update to v2.0.0 through the in-app updater = first real updater test.
 
 ## 2026-11-16 ~18:30 EST — 2.0 redesign started (feat/redesign-2.0)
 **Why:** user: "update the app and its UI, graphs and add any simple useful features that are currently missing … add an in-app updater … UI needs a nice overhaul to be more professional, fluid and informative … make the graphs a lot more fluid and somewhat fancy", then "go, do all of it" to the proposed plan.

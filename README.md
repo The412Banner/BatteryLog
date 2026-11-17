@@ -11,6 +11,27 @@ It started as a tool to chase random shut-offs on the AYANEO Pocket FIT and work
 
 ## Screens
 
+<table>
+  <tr>
+    <td><img src="docs/screenshots/now-dark.png" width="260" alt="Now tab"></td>
+    <td><img src="docs/screenshots/now-chart.png" width="260" alt="Now tab, last 24 hours and logging"></td>
+    <td><img src="docs/screenshots/now-charging.png" width="260" alt="Now tab while charging"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/history-level.png" width="260" alt="History, battery level"></td>
+    <td><img src="docs/screenshots/history-power.png" width="260" alt="History, power"></td>
+    <td><img src="docs/screenshots/log-details.png" width="260" alt="Log details with synced charts"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/health.png" width="260" alt="Battery health"></td>
+    <td><img src="docs/screenshots/settings.png" width="260" alt="Settings"></td>
+    <td><img src="docs/screenshots/now-light.png" width="260" alt="Now tab, light theme"></td>
+  </tr>
+</table>
+
+<sub>Screenshots are rendered from the app's own screens with sample data (see `ScreenshotTest`).</sub>
+
+
 **Now**: an animated battery ring and the current state (charging, watts). Time left from the system
 estimate and from your own average. Live tiles for power, current, voltage and temperature, each with a
 30-minute trend line. A "since last charge" summary, the last 24 hours as a chart, and the logging controls.
