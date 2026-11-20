@@ -26,7 +26,7 @@ Newest entry first. Times are US Eastern.
   (credited to the app on screen); temperatures are device sensors; GPU memory and CPU time are truly per app.
 - CI 44741830834 FAILED (a `/*` inside a KDoc opened a nested comment); fix 6745640d -> CI 44742025471 GREEN (logic tests incl.
   new parser tests, build, v1+v2+v3, screenshots). APK sha256 5e699e4c713d3b35bfbd3d0811c842ced8c918345d78da0bb18275aa178ba3a4,
-  staged /sdcard/Download/BatteryLog-per-app-6745640d.apk (hash host == device). Install awaits user yes. NOT device-tested.
+  staged /sdcard/Download/BatteryLog-per-app-6745640d.apk (hash host == device). User said "yes install it" -> installing. NOT device-tested.
 
 ## 2026-11-16 ~19:20 EST — v2.0.0 stable release cut (feat/redesign-2.0 → main)
 **Why:** user (19:17 EST): "release as stable 2.0.0", then "also update the repo read me with app screenshots included".
