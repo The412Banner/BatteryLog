@@ -192,7 +192,9 @@ class BatteryLogService : Service() {
             unregisterReceivers()
             stopLogging()
             _state.value = State()
-            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+            // Detach: per-app monitoring may still be using the shared notification.
+            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_DETACH)
+            ServiceNotification.refreshOrCancel(this)
             foregroundStarted = false
             stopSelf()
         }
@@ -316,38 +318,8 @@ class BatteryLogService : Service() {
         }
     }
 
-    private fun buildNotification(b: BatteryInfo): Notification {
-        val s = _state.value
-        val stopPi = PendingIntent.getService(
-            this, 0, Intent(this, BatteryLogService::class.java).setAction(ACTION_STOP),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-        val title = when {
-            s.auto && s.recording -> "Auto · recording on battery"
-            s.auto -> "Auto · waiting for unplug"
-            s.recording -> "Recording"
-            else -> "BatteryLog"
-        }
-        val unit = settings.current().tempUnit
-        val parts = buildList {
-            if (b.capacityPct >= 0) add("${b.capacityPct} %")
-            if (!b.watts.isNaN()) add(Fmt.watts(b.watts))
-            if (!b.tempC.isNaN()) add(Fmt.temp(b.tempC, unit))
-            if (b.voltageMv > 0) add(Fmt.voltsShort(b.voltageMv))
-        }
-        return NotificationCompat.Builder(this, Notifier.CH_LOGGING)
-            .setSmallIcon(R.drawable.ic_stat_battery)
-            .setContentTitle(title)
-            .setContentText(parts.joinToString("  ·  "))
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setSilent(true)
-            .setShowWhen(false)
-            .setContentIntent(Notifier.openAppIntent(this))
-            .addAction(0, "Stop", stopPi)
-            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-            .build()
-    }
+    private fun buildNotification(b: BatteryInfo): Notification = ServiceNotification.build(this, b)
+
 
     private fun statusName(s: Int) = when (s) {
         BatteryManager.BATTERY_STATUS_CHARGING -> "charging"

@@ -16,6 +16,10 @@
     <!-- In-app updater: GitHub releases + Android's package installer. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- App names and icons on the Apps screen (Android 11+ hides other apps without it). -->
+    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
     <!-- Which app is on screen, for per-app monitoring (granted through root with appops). -->
     <uses-permission
         android:name="android.permission.PACKAGE_USAGE_STATS"

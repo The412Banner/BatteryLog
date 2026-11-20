@@ -9,13 +9,11 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
-import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.the412banner.batterylog.BatteryLogApp
-import com.the412banner.batterylog.Fmt
 import com.the412banner.batterylog.Notifier
-import com.the412banner.batterylog.R
+import com.the412banner.batterylog.ServiceNotification
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -47,6 +45,8 @@ class AppMonitorService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
+            // "Stop apps" from the notification switches the setting off too.
+            BatteryLogApp.get(this).settings.update { it.copy(perApp = false) }
             stopSelf()
             return START_NOT_STICKY
         }
@@ -59,20 +59,12 @@ class AppMonitorService : Service() {
         return START_STICKY
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun startFg(text: String) {
         val type = if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0
-        ServiceCompat.startForeground(this, ID, notification(text), type)
+        // Shares the battery logger's notification (one notification for both).
+        ServiceCompat.startForeground(this, Notifier.ID_SERVICE, ServiceNotification.build(this), type)
     }
-
-    private fun notification(text: String) = NotificationCompat.Builder(this, Notifier.CH_LOGGING)
-        .setSmallIcon(R.drawable.ic_stat_battery)
-        .setContentTitle("Per-app monitoring")
-        .setContentText(text)
-        .setOngoing(true)
-        .setOnlyAlertOnce(true)
-        .setSilent(true)
-        .setContentIntent(Notifier.openAppIntent(this, "apps", ID))
-        .build()
 
     private suspend fun loop() {
         val app = BatteryLogApp.get(this)
@@ -87,8 +79,7 @@ class AppMonitorService : Service() {
             val tick = sampler?.sample()
             if (tick == null) {
                 _lastError.value = "Root access is needed"
-                getSystemService(android.app.NotificationManager::class.java)
-                    .notify(ID, notification("Root access is needed"))
+                ServiceNotification.refreshOrCancel(this)
                 delay(30_000)
                 continue
             }
@@ -98,12 +89,7 @@ class AppMonitorService : Service() {
             val now = System.currentTimeMillis()
             if (now - lastNotify > 15_000) {
                 lastNotify = now
-                val label = if (fg.isEmpty()) "Screen off" else appLabel(fg)
-                val w = if (tick.watts.isNaN()) "—" else Fmt.watts(tick.watts)
-                runCatching {
-                    getSystemService(android.app.NotificationManager::class.java)
-                        .notify(ID, notification("$label · $w · CPU ${"%.0f".format(tick.cpuPct)}% · GPU ${"%.0f".format(tick.gpuPct)}%"))
-                }
+                ServiceNotification.refreshOrCancel(this)
             }
             delay(s.perAppSeconds.coerceIn(1, 60) * 1000L)
         }
@@ -162,23 +148,20 @@ class AppMonitorService : Service() {
         return fgPkg
     }
 
-    private val labels = HashMap<String, String>()
-    private fun appLabel(pkg: String): String = labels.getOrPut(pkg) {
-        runCatching { packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString() }.getOrDefault(pkg)
-    }
-
     override fun onDestroy() {
         runCatching { flushMinute() }
         scope.cancel()
         sampler?.close()
         sampler = null
         _running.value = false
+        // Keep the shared notification if battery logging still runs; remove it otherwise.
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_DETACH)
+        ServiceNotification.refreshOrCancel(this)
         super.onDestroy()
     }
 
     companion object {
-        const val ID = 30
-        private const val ACTION_STOP = "stop"
+        const val ACTION_STOP = "stop"
 
         private val _running = MutableStateFlow(false)
         val running: StateFlow<Boolean> = _running.asStateFlow()
