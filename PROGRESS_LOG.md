@@ -3,13 +3,24 @@
 Newest entry first. Times are US Eastern.
 
 ## Resume point
-- **11-20: per-app monitoring in progress on feat/per-app-monitor (see the 2026-11-20 entry).**
+- **v2.1.0 STABLE = Latest** (11-20 08:55 EST, tag -> d72fd40e = release run 44747786224; per-app monitoring). Pocket FIT runs 208cc13b (same code, versionName 2.0.0) -> its updater should offer 2.1.0 (not yet tried).
 - **v2.0.0 STABLE = Latest** (published 2026-11-16 19:30:20 EST, tag → 21cc13320fa02bdbbd69157d269441b4e2e86a16 = release run 43987268286 headSha); assets BatteryLog-v2.0.0-21cc1332.apk (sha256 b7917a08…, = .sha256, AOSP testkey a40da80a, vc 9) + .sha256; notes = release-notes/v2.0.0.md. main = 21cc1332 (+ log commits); backup refs/backup/20261116/main-before-redesign-2.0 = 0b7367d2.
 - **In-app updater DEVICE-PROVEN on the Elite (11-16 19:32 EST):** 1611739d (1.6.0) → v2.0.0 via Settings → Updates: found the release, downloaded, SHA-256 verified, installed. Installed base.apk sha256 b7917a08… = release asset, vc 9 / 2.0.0, installer of record = BatteryLog itself; crash buffer empty. Elite runs v2.0.0. Rollback APKs: /sdcard/Download/BatteryLog-backup-20261116/.
 - Releases: dev builds = Actions artifacts / `-preN` prereleases only; stable only when the user says so. Install on a device only after the user's explicit yes.
 
 ## Lessons learned (don't repeat these)
 - (none yet)
+
+## 2026-11-20 — v2.1.0 stable release (feat/per-app-monitor -> main)
+- User: "release a new stable" (08:4x EST, after per-app monitoring was installed and used on the Pocket FIT).
+- Backup refs/backup/20261120/main-before-per-app-monitor = 3d87f73b; main fast-forwarded to feat/per-app-monitor;
+  release commit d72fd40e (versionCode 10 / 2.1.0, release-notes/v2.1.0.md, README per-app section). Code on main ==
+  device-installed 208cc13b (diff = README, version, notes only).
+- Release run 44747786224 (workflow_dispatch release=true tag=v2.1.0 prerelease=false, headSha d72fd40e): all steps green
+  (logic tests, build, v1+v2+v3, screenshots, publish). Release v2.1.0 Latest, tag -> d72fd40ecc9a1017c8ccd0496cfc31e77aa4082f,
+  asset BatteryLog-v2.1.0-d72fd40e.apk 3,288,727 B sha256 86d86df5291563e7b7760954119c72079bf663e5447c2e5485c6036b18f4c838
+  (+ .sha256); downloaded asset re-verified; unauthenticated releases API returns v2.1.0 (what the updater reads).
+- Not done: README screenshots of the Apps screens (ScreenshotTest has no Apps screens yet); feat branch kept (ask before deleting).
 
 ## 2026-11-20 — Per-app monitoring (root) (feat/per-app-monitor, CI)
 - Why: user asked for per-app views like the device-wide ones (power, temperature, usage) plus a toggle to monitor
