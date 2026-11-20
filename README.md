@@ -7,7 +7,7 @@ It started as a tool to chase random shut-offs on the AYANEO Pocket FIT and work
 - **Package:** `com.the412banner.batterylog.debug` (kept from the first releases so updates install over them)
 - **UI:** Kotlin, Jetpack Compose, Material 3 (light, dark, black, optional wallpaper colours)
 - **Android:** 10 (API 29) or newer, target API 36
-- **Root:** not needed for logging, charts and reports. Needed for the boot logger and charge control.
+- **Root:** not needed for logging, charts and reports. Needed for the boot logger, charge control and per-app monitoring.
 
 ## Screens
 
@@ -84,6 +84,20 @@ hot-battery alert.
 logger at every boot that writes the same CSV columns, so logs cover the minutes before a shut-off even
 if the app never opened. Where the app is also logging, the app's rows are used and the boot logger's
 rows for the same time are skipped.
+
+## Per-app monitoring (root, optional)
+
+**Settings → Per-app monitoring** records, every 2–30 s, the app on screen, the device's power, CPU and GPU load,
+GPU clock and temperatures (CPU, GPU, skin, memory, battery), plus each app's CPU time, RAM and GPU memory.
+
+- **Apps** tab: apps ranked by battery used, screen time, CPU, RAM or GPU memory for Today / 24 h / 7 days.
+- Tap an app: one big chart with chips for Power, App CPU, GPU, CPU temp, GPU temp, RAM, GPU memory and CPU
+  (always), charging shaded, plus a summary.
+- **Show all metrics**: min / avg / max of every metric and the raw readings.
+
+Watts per app = the whole device's power while that app is on screen (Android does not measure one app on its
+own); GPU load is device-wide and credited to the app on screen. CPU time, RAM and GPU memory are per app.
+Files: `/sdcard/BatteryLog/apps/timeline-<day>.csv` and `apps-<day>.csv`.
 
 ## Storage
 
