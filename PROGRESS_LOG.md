@@ -2,6 +2,15 @@
 
 Newest entry first. Times are US Eastern.
 
+## Resume point
+- **11-20: per-app monitoring in progress on feat/per-app-monitor (see the 2026-11-20 entry).**
+- **v2.0.0 STABLE = Latest** (published 2026-11-16 19:30:20 EST, tag → 21cc13320fa02bdbbd69157d269441b4e2e86a16 = release run 43987268286 headSha); assets BatteryLog-v2.0.0-21cc1332.apk (sha256 b7917a08…, = .sha256, AOSP testkey a40da80a, vc 9) + .sha256; notes = release-notes/v2.0.0.md. main = 21cc1332 (+ log commits); backup refs/backup/20261116/main-before-redesign-2.0 = 0b7367d2.
+- **In-app updater DEVICE-PROVEN on the Elite (11-16 19:32 EST):** 1611739d (1.6.0) → v2.0.0 via Settings → Updates: found the release, downloaded, SHA-256 verified, installed. Installed base.apk sha256 b7917a08… = release asset, vc 9 / 2.0.0, installer of record = BatteryLog itself; crash buffer empty. Elite runs v2.0.0. Rollback APKs: /sdcard/Download/BatteryLog-backup-20261116/.
+- Releases: dev builds = Actions artifacts / `-preN` prereleases only; stable only when the user says so. Install on a device only after the user's explicit yes.
+
+## Lessons learned (don't repeat these)
+- (none yet)
+
 ## 2026-11-20 — Per-app monitoring (root) (feat/per-app-monitor, CI)
 - Why: user asked for per-app views like the device-wide ones (power, temperature, usage) plus a toggle to monitor
   each app's watts, GPU and CPU load/temps, time and memory, all metrics viewable behind a toggle, same animated graphs.
@@ -16,14 +25,6 @@ Newest entry first. Times are US Eastern.
 - Honest limits shown to the user: per-app watts = whole-device power while the app is on screen; GPU load device-wide
   (credited to the app on screen); temperatures are device sensors; GPU memory and CPU time are truly per app.
 - CI 44741830834 running. Version stays 2.0.0/vc9 until a release cut. NOT device-tested.
-
-## Resume point
-- **v2.0.0 STABLE = Latest** (published 2026-11-16 19:30:20 EST, tag → 21cc13320fa02bdbbd69157d269441b4e2e86a16 = release run 43987268286 headSha); assets BatteryLog-v2.0.0-21cc1332.apk (sha256 b7917a08…, = .sha256, AOSP testkey a40da80a, vc 9) + .sha256; notes = release-notes/v2.0.0.md. main = 21cc1332 (+ log commits); backup refs/backup/20261116/main-before-redesign-2.0 = 0b7367d2.
-- **In-app updater DEVICE-PROVEN on the Elite (11-16 19:32 EST):** 1611739d (1.6.0) → v2.0.0 via Settings → Updates: found the release, downloaded, SHA-256 verified, installed. Installed base.apk sha256 b7917a08… = release asset, vc 9 / 2.0.0, installer of record = BatteryLog itself; crash buffer empty. Elite runs v2.0.0. Rollback APKs: /sdcard/Download/BatteryLog-backup-20261116/.
-- Releases: dev builds = Actions artifacts / `-preN` prereleases only; stable only when the user says so. Install on a device only after the user's explicit yes.
-
-## Lessons learned (don't repeat these)
-- (none yet)
 
 ## 2026-11-16 ~19:20 EST — v2.0.0 stable release cut (feat/redesign-2.0 → main)
 **Why:** user (19:17 EST): "release as stable 2.0.0", then "also update the repo read me with app screenshots included".
