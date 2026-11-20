@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.NotificationsActive
@@ -143,6 +144,20 @@ fun SettingsContent(settings: AppSettings, serviceActive: Boolean, updateAvailab
                 Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Nothing is running right now", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                     FilledTonalButton(onClick = actions.startAuto) { Text("Turn on Auto") }
+                }
+            }
+        }
+
+        SectionCard("Per-app monitoring", Icons.Rounded.Apps, tint = c.temp, subtitle = "Needs root") {
+            SwitchRow("Per-app monitoring", s.perApp) { v -> set { it.copy(perApp = v) } }
+            AnimatedVisibility(s.perApp) {
+                Column {
+                    Spacer(Modifier.height(6.dp))
+                    Label("Record every")
+                    val pc = AppSettings.PER_APP_CHOICES
+                    Segmented(pc.map { "$it s" }, pc.indexOf(s.perAppSeconds).coerceAtLeast(0)) { i -> set { it.copy(perAppSeconds = pc[i]) } }
+                    Spacer(Modifier.height(6.dp))
+                    SwitchRow("Show all metrics", s.showAllMetrics) { v -> set { it.copy(showAllMetrics = v) } }
                 }
             }
         }

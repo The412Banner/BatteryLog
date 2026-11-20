@@ -12,6 +12,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.BatteryChargingFull
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Insights
@@ -37,6 +38,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.the412banner.batterylog.BatteryLogService
+import com.the412banner.batterylog.ui.apps.AppDetailScreen
+import com.the412banner.batterylog.ui.apps.AppsScreen
 import com.the412banner.batterylog.ui.health.HealthScreen
 import com.the412banner.batterylog.ui.history.HistoryScreen
 import com.the412banner.batterylog.ui.now.NowActions
@@ -49,6 +52,7 @@ import kotlinx.coroutines.flow.StateFlow
 private enum class Tab(val route: String, val label: String, val icon: ImageVector) {
     Now("now", "Now", Icons.Rounded.BatteryChargingFull),
     History("history", "History", Icons.Rounded.Insights),
+    Apps("apps", "Apps", Icons.Rounded.Apps),
     Health("health", "Health", Icons.Rounded.Favorite),
     Settings("settings", "Settings", Icons.Rounded.Settings),
 }
@@ -66,6 +70,11 @@ fun AppRoot(pendingRoute: StateFlow<String?>, consumeRoute: () -> Unit) {
         val r = route ?: return@LaunchedEffect
         consumeRoute()
         if (r == "updates") nav.navigate("updates") { launchSingleTop = true }
+        if (r == "apps") nav.navigate(Tab.Apps.route) {
+            popUpTo(nav.graph.findStartDestination().id) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
     }
 
     val grantFiles: () -> Unit = {
@@ -146,6 +155,13 @@ fun AppRoot(pendingRoute: StateFlow<String?>, consumeRoute: () -> Unit) {
                 )
             }
             composable(Tab.History.route) { HistoryScreen(openRun = { path -> nav.navigate("run?path=" + Uri.encode(path)) }) }
+            composable(Tab.Apps.route) { AppsScreen(openApp = { pkg -> nav.navigate("app?pkg=" + Uri.encode(pkg)) }) }
+            composable(
+                "app?pkg={pkg}",
+                arguments = listOf(navArgument("pkg") { type = NavType.StringType; defaultValue = "" }),
+            ) { e ->
+                AppDetailScreen(pkg = e.arguments?.getString("pkg").orEmpty(), back = { nav.popBackStack() })
+            }
             composable(Tab.Health.route) { HealthScreen(grantFiles = grantFiles) }
             composable(Tab.Settings.route) { SettingsScreen(openUpdates = { nav.navigate("updates") { launchSingleTop = true } }) }
             composable(

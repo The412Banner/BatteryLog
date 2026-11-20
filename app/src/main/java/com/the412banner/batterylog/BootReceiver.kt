@@ -8,12 +8,13 @@ import android.content.Intent
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val s = BatteryLogApp.get(context).settings.current()
-        if (s.mode == LogMode.Off) return
         val resume = when (intent.action) {
             Intent.ACTION_BOOT_COMPLETED -> s.resumeAfterRestart
             Intent.ACTION_MY_PACKAGE_REPLACED -> true
             else -> false
         }
-        if (resume) BatteryLogService.restore(context)
+        if (!resume) return
+        if (s.mode != LogMode.Off) BatteryLogService.restore(context)
+        if (s.perApp) com.the412banner.batterylog.apps.AppMonitorService.start(context)
     }
 }

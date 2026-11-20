@@ -1,0 +1,198 @@
+package com.the412banner.batterylog.apps
+
+import android.app.Service
+import android.app.usage.UsageEvents
+import android.app.usage.UsageStatsManager
+import android.content.Context
+import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.os.Build
+import android.os.IBinder
+import android.os.PowerManager
+import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
+import androidx.core.content.ContextCompat
+import com.the412banner.batterylog.BatteryLogApp
+import com.the412banner.batterylog.Fmt
+import com.the412banner.batterylog.Notifier
+import com.the412banner.batterylog.R
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+
+/**
+ * Per-app monitoring (root): every few seconds records device power, CPU/GPU load, temperatures and the
+ * app on screen, plus per-app CPU time, memory and GPU memory. Runs as its own foreground service.
+ */
+class AppMonitorService : Service() {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var sampler: AppSampler? = null
+    private var fgPkg = ""
+    private var lastEventQuery = 0L
+    private var minute = 0L
+    private val acc = HashMap<String, MinuteAcc>()
+
+    private class MinuteAcc(val uid: Int) {
+        var cpuMs = 0L; var rssSum = 0L; var rssMax = 0L; var gpuMax = 0L; var fgMs = 0L; var energyMj = 0.0; var n = 0
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        startFg("Starting…")
+        if (sampler == null) {
+            sampler = AppSampler(this)
+            _running.value = true
+            scope.launch { loop() }
+        }
+        return START_STICKY
+    }
+
+    private fun startFg(text: String) {
+        val type = if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0
+        ServiceCompat.startForeground(this, ID, notification(text), type)
+    }
+
+    private fun notification(text: String) = NotificationCompat.Builder(this, Notifier.CH_LOGGING)
+        .setSmallIcon(R.drawable.ic_stat_battery)
+        .setContentTitle("Per-app monitoring")
+        .setContentText(text)
+        .setOngoing(true)
+        .setOnlyAlertOnce(true)
+        .setSilent(true)
+        .setContentIntent(Notifier.openAppIntent(this, "apps", ID))
+        .build()
+
+    private suspend fun loop() {
+        val app = BatteryLogApp.get(this)
+        // The app on screen comes from usage events; root grants that access once.
+        RootShell().apply { run("appops set $packageName GET_USAGE_STATS allow"); close() }
+        AppStore.prune(this, app.settings.current().keepDays)
+        lastEventQuery = System.currentTimeMillis() - 60_000
+        var lastNotify = 0L
+        while (scope.isActive) {
+            val s = app.settings.current()
+            if (!s.perApp) break
+            val tick = sampler?.sample()
+            if (tick == null) {
+                _lastError.value = "Root access is needed"
+                getSystemService(android.app.NotificationManager::class.java)
+                    .notify(ID, notification("Root access is needed"))
+                delay(30_000)
+                continue
+            }
+            _lastError.value = null
+            val fg = foreground()
+            if (tick.dtMs > 0) record(tick, fg)
+            val now = System.currentTimeMillis()
+            if (now - lastNotify > 15_000) {
+                lastNotify = now
+                val label = if (fg.isEmpty()) "Screen off" else appLabel(fg)
+                val w = if (tick.watts.isNaN()) "—" else Fmt.watts(tick.watts)
+                runCatching {
+                    getSystemService(android.app.NotificationManager::class.java)
+                        .notify(ID, notification("$label · $w · CPU ${"%.0f".format(tick.cpuPct)}% · GPU ${"%.0f".format(tick.gpuPct)}%"))
+                }
+            }
+            delay(s.perAppSeconds.coerceIn(1, 60) * 1000L)
+        }
+        stopSelf()
+    }
+
+    private fun record(t: DeviceTick, fg: String) {
+        val cores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+        val fgTick = t.apps[fg]
+        val fgCpuPct = if (fgTick != null && t.dtMs > 0) fgTick.cpuMs * 100f / (t.dtMs * cores) else Float.NaN
+        val row = TRow(
+            t.time, fg, t.watts, t.level, t.charging, t.cpuPct, t.gpuPct, t.gpuMhz, t.cpuC, t.gpuC, t.skinC, t.ddrC, t.battC,
+            fgCpuPct, fgTick?.rssKb ?: 0, fgTick?.gpuKb ?: 0,
+        )
+        AppStore.appendTimeline(this, row)
+        _latest.value = row
+
+        val thisMinute = t.time / 60_000 * 60_000
+        if (minute != 0L && thisMinute != minute) flushMinute()
+        minute = thisMinute
+        val drawW = row.drawW.takeIf { !it.isNaN() } ?: 0.0
+        for ((pkg, a) in t.apps) {
+            val m = acc.getOrPut(pkg) { MinuteAcc(a.uid) }
+            m.cpuMs += a.cpuMs; m.rssSum += a.rssKb; m.rssMax = maxOf(m.rssMax, a.rssKb); m.gpuMax = maxOf(m.gpuMax, a.gpuKb); m.n++
+            if (pkg == fg) { m.fgMs += t.dtMs; m.energyMj += drawW * t.dtMs }
+        }
+        if (fg.isNotEmpty() && fg !in t.apps) {
+            val m = acc.getOrPut(fg) { MinuteAcc(-1) }
+            m.fgMs += t.dtMs; m.energyMj += drawW * t.dtMs
+        }
+    }
+
+    private fun flushMinute() {
+        val rows = acc.filter { (_, m) -> m.cpuMs > 0 || m.fgMs > 0 }.map { (pkg, m) ->
+            MRow(minute, pkg, m.uid, m.cpuMs, if (m.n > 0) m.rssSum / m.n else 0, m.rssMax, m.gpuMax, m.fgMs, m.energyMj, m.n)
+        }
+        acc.clear()
+        runCatching { AppStore.appendMinutes(this, rows) }
+    }
+
+    /** Package on screen from usage events; "" while the screen is off. */
+    private fun foreground(): String {
+        val pm = getSystemService(PowerManager::class.java)
+        if (!pm.isInteractive) return ""
+        val usm = getSystemService(UsageStatsManager::class.java) ?: return fgPkg
+        val now = System.currentTimeMillis()
+        runCatching {
+            val events = usm.queryEvents(lastEventQuery, now)
+            val e = UsageEvents.Event()
+            while (events.hasNextEvent()) {
+                events.getNextEvent(e)
+                if (e.eventType == UsageEvents.Event.ACTIVITY_RESUMED) fgPkg = e.packageName
+            }
+        }
+        lastEventQuery = now
+        return fgPkg
+    }
+
+    private val labels = HashMap<String, String>()
+    private fun appLabel(pkg: String): String = labels.getOrPut(pkg) {
+        runCatching { packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString() }.getOrDefault(pkg)
+    }
+
+    override fun onDestroy() {
+        runCatching { flushMinute() }
+        scope.cancel()
+        sampler?.close()
+        sampler = null
+        _running.value = false
+        super.onDestroy()
+    }
+
+    companion object {
+        const val ID = 30
+        private const val ACTION_STOP = "stop"
+
+        private val _running = MutableStateFlow(false)
+        val running: StateFlow<Boolean> = _running.asStateFlow()
+        private val _latest = MutableStateFlow<TRow?>(null)
+        val latest: StateFlow<TRow?> = _latest.asStateFlow()
+        private val _lastError = MutableStateFlow<String?>(null)
+        val lastError: StateFlow<String?> = _lastError.asStateFlow()
+
+        fun start(ctx: Context) {
+            runCatching { ContextCompat.startForegroundService(ctx, Intent(ctx, AppMonitorService::class.java)) }
+        }
+
+        fun stop(ctx: Context) {
+            runCatching { ctx.startService(Intent(ctx, AppMonitorService::class.java).setAction(ACTION_STOP)) }
+        }
+    }
+}

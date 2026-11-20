@@ -29,12 +29,18 @@ data class AppSettings(
     val skippedVersion: String? = null,
     val lastUpdateCheck: Long = 0,
     val mode: LogMode = LogMode.Off,
+    /** Per-app monitoring through root (own foreground service). */
+    val perApp: Boolean = false,
+    val perAppSeconds: Int = 5,
+    /** Show every recorded metric (full tables) on the app detail screen. */
+    val showAllMetrics: Boolean = false,
 ) {
     val anyAlert: Boolean get() = chargeAlarm || lowAlert || tempAlert
 
     companion object {
         val SAMPLE_CHOICES = listOf(15, 30, 60, 120)
         val KEEP_CHOICES = listOf(0, 30, 90, 180, 365)
+        val PER_APP_CHOICES = listOf(2, 5, 10, 30)
     }
 }
 
@@ -77,6 +83,9 @@ class SettingsStore(context: Context) {
             skippedVersion = prefs.getString("skippedVersion", null),
             lastUpdateCheck = prefs.getLong("lastUpdateCheck", 0L),
             mode = enumOf("mode", LogMode.values(), d.mode),
+            perApp = prefs.getBoolean("perApp", d.perApp),
+            perAppSeconds = prefs.getInt("perAppSeconds", d.perAppSeconds),
+            showAllMetrics = prefs.getBoolean("showAllMetrics", d.showAllMetrics),
         )
     }
 
@@ -99,6 +108,9 @@ class SettingsStore(context: Context) {
             .putString("skippedVersion", s.skippedVersion)
             .putLong("lastUpdateCheck", s.lastUpdateCheck)
             .putString("mode", s.mode.name)
+            .putBoolean("perApp", s.perApp)
+            .putInt("perAppSeconds", s.perAppSeconds)
+            .putBoolean("showAllMetrics", s.showAllMetrics)
             .apply()
     }
 }

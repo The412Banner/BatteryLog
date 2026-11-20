@@ -122,4 +122,57 @@ class LogicTest {
         assertEquals("v2.0.0-pre2", pre.tag)
         assertEquals("BatteryLog-v2.0.0-pre2.apk.sha256", pre.checksum!!.name)
     }
+
+    // ---- per-app monitoring parsers ----
+
+    @Test
+    fun psParsesProcessesAndCpuTime() {
+        val out = """
+              PID   UID    RSS     TIME+ NAME
+                1     0   5756   0:14.44 init
+            12457 10226 412000   1:02.50 com.banner.cleanbrowser
+            12460 10226  80000   0:00.07 com.banner.cleanbrowser:sandboxed_process0
+              900  1000  90000 1-02:03:04.5 system_server
+        """.trimIndent()
+        val ps = com.the412banner.batterylog.apps.AppParse.ps(out)
+        assertEquals(4, ps.size)
+        assertEquals(14_440L, ps[0].cpuMs)
+        assertEquals(62_500L, ps[1].cpuMs)
+        assertEquals("com.banner.cleanbrowser", ps[2].pkg)
+        assertTrue(ps[1].isApp)
+        assertTrue(!ps[3].isApp)
+        assertEquals(((24L + 2) * 3600 + 3 * 60 + 4) * 1000 + 500, ps[3].cpuMs)
+    }
+
+    @Test
+    fun grepAndStatAndBatteryStats() {
+        val g = com.the412banner.batterylog.apps.AppParse.grepH(
+            "/sys/class/kgsl/kgsl/proc/10360/kernel:8667136\n/sys/class/thermal/thermal_zone5/temp:48100",
+        )
+        assertEquals("8667136", g["10360"])
+        assertEquals("48100", g["thermal_zone5"])
+        val st = com.the412banner.batterylog.apps.AppParse.procStat("cpu  100 0 50 800 50 0 0 0 0 0")!!
+        assertEquals(150L, st.first)
+        assertEquals(1000L, st.second)
+        val bs = com.the412banner.batterylog.apps.AppParse.batteryStatsUid("9,0,l,pwi,uid,4.32,1,0,0\n9,10226,l,pwi,uid,12.5,1,0,0\n9,0,l,pwi,cpu,15.9,0,0,0")
+        assertEquals(12.5, bs[10226]!!, 0.001)
+        assertEquals(2, bs.size)
+        assertEquals("cpu", com.the412banner.batterylog.apps.AppParse.thermalGroup("cpu-2-0-0"))
+        assertEquals("gpu", com.the412banner.batterylog.apps.AppParse.thermalGroup("gpuss-3"))
+        assertEquals(48.1f, com.the412banner.batterylog.apps.AppParse.milliC("48100"), 0.01f)
+        assertTrue(com.the412banner.batterylog.apps.AppParse.milliC("-273000").isNaN())
+    }
+
+    @Test
+    fun appRowsRoundTrip() {
+        val t = com.the412banner.batterylog.apps.TRow(
+            1000L, "com.x", -2.5, 80, false, 30f, 55f, 600f, 48f, 50f, 35f, Float.NaN, 31f, 12f, 4096, 2048,
+        )
+        val back = com.the412banner.batterylog.apps.TRow.parse(t.csv())!!
+        assertEquals("com.x", back.fg)
+        assertEquals(2.5, back.drawW, 0.001)
+        assertTrue(back.ddrC.isNaN())
+        val m = com.the412banner.batterylog.apps.MRow(60_000L, "com.x", 10226, 1200, 4000, 5000, 300, 30_000, 75_000.0, 6)
+        assertEquals(m, com.the412banner.batterylog.apps.MRow.parse(m.csv()))
+    }
 }

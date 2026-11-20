@@ -4,6 +4,9 @@ import android.app.Application
 import android.content.Context
 import com.the412banner.batterylog.update.UpdateRepository
 import com.the412banner.batterylog.update.UpdateScheduler
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 /** Process-wide singletons (settings, logs, updater). */
 class BatteryLogApp : Application() {
@@ -20,6 +23,12 @@ class BatteryLogApp : Application() {
         Notifier.createChannels(this)
         updates.clearDownloads()
         runCatching { UpdateScheduler.schedule(this, settings.current().autoUpdateCheck) }
+        // Per-app monitoring follows its setting (switching off is handled by the service loop).
+        kotlinx.coroutines.MainScope().launch {
+            settings.flow.map { it.perApp }.distinctUntilChanged().collect { on ->
+                if (on) com.the412banner.batterylog.apps.AppMonitorService.start(this@BatteryLogApp)
+            }
+        }
     }
 
     private fun setup(ctx: Context) {
