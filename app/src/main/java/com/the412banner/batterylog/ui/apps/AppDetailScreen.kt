@@ -20,10 +20,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Memory
+import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.TableChart
 import androidx.compose.material.icons.rounded.Thermostat
 import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -127,8 +131,8 @@ fun AppDetailScreen(pkg: String, back: () -> Unit) {
                 }
                 return@Column
             }
+            Charts(pkg, d, settings.tempUnit, period)
             Summary(s, settings.tempUnit)
-            Charts(pkg, d, settings.tempUnit)
             if (settings.showAllMetrics) AllMetrics(pkg, d, settings.tempUnit)
             Spacer(Modifier.height(16.dp))
         }
@@ -191,46 +195,114 @@ private fun seriesOf(rows: List<TRow>, pkg: String, f: (TRow) -> Float): Series 
     return Series(t, v)
 }
 
+private fun minuteSeries(rows: List<MRow>, f: (MRow) -> Float): Series =
+    Series(LongArray(rows.size) { rows[it].minute }, FloatArray(rows.size) { f(rows[it]) })
+
+/** Metrics the app chart can show (chips like the History screen). */
+private enum class AppMetric(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    Power("Power", Icons.Rounded.Bolt),
+    Cpu("App CPU", Icons.Rounded.Speed),
+    Gpu("GPU", Icons.Rounded.Videocam),
+    CpuTemp("CPU temp", Icons.Rounded.Thermostat),
+    GpuTemp("GPU temp", Icons.Rounded.Thermostat),
+    Ram("RAM", Icons.Rounded.Memory),
+    GpuMem("GPU memory", Icons.Rounded.Memory),
+    CpuAll("CPU (always)", Icons.Rounded.Speed),
+}
+
+/** Charging periods (shaded on the chart). */
+private fun chargingBands(rows: List<TRow>): List<LongRange> {
+    val out = ArrayList<LongRange>()
+    var start = -1L
+    var last = -1L
+    for (r in rows) {
+        if (r.charging) {
+            if (start < 0) start = r.time
+            last = r.time
+        } else if (start >= 0) {
+            out += start..last; start = -1L
+        }
+    }
+    if (start >= 0) out += start..last
+    return out
+}
+
 @Composable
-private fun Charts(pkg: String, d: Detail, unit: TempUnit) {
+private fun Charts(pkg: String, d: Detail, unit: TempUnit, period: Period) {
     val c = LocalChartColors.current
     val chart = rememberChartState()
+    var metric by rememberSaveable { mutableStateOf(AppMetric.Power) }
     val cores = remember { Runtime.getRuntime().availableProcessors().coerceAtLeast(1) }
     fun tc(v: Float) = if (v.isNaN()) v else if (unit == TempUnit.F) v * 9f / 5f + 32f else v
     val tempAxis: (Float) -> String = { "%.0f°".format(it) }
-    val gap = 90_000L
-    val charts = listOf(
-        ChartSpec("Power while in use", c.power, seriesOf(d.timeline, pkg) { it.drawW.toFloat() }, { "%.1fW".format(it) }, 1f),
-        ChartSpec("GPU load", c.current, seriesOf(d.timeline, pkg) { it.gpuPct }, { "%.0f%%".format(it) }, 10f),
-        ChartSpec("App CPU", c.voltage, seriesOf(d.timeline, pkg) { it.fgCpuPct }, { "%.0f%%".format(it) }, 5f),
-        ChartSpec("CPU temperature", c.temp, seriesOf(d.timeline, pkg) { tc(it.cpuC) }, tempAxis, 4f),
-        ChartSpec("GPU temperature", c.warn, seriesOf(d.timeline, pkg) { tc(it.gpuC) }, tempAxis, 4f),
-        ChartSpec(
-            "App CPU (all the time)", c.voltage,
-            Series(LongArray(d.minutes.size) { d.minutes[it].minute }, FloatArray(d.minutes.size) { d.minutes[it].cpuMs * 100f / (60_000f * cores) }),
-            { "%.0f%%".format(it) }, 5f,
-        ),
-        ChartSpec(
-            "App memory", c.level,
-            Series(LongArray(d.minutes.size) { d.minutes[it].minute }, FloatArray(d.minutes.size) { d.minutes[it].rssAvgKb / 1024f }),
-            { if (it >= 1024) "%.1fG".format(it / 1024f) else "%.0fM".format(it) }, 50f,
-        ),
-    )
-    for (spec in charts) {
-        if (spec.series.v.none { !it.isNaN() }) continue
-        AppCard {
-            Text(spec.title, style = MaterialTheme.typography.titleSmall)
-            Spacer(Modifier.height(8.dp))
-            TimeChart(
-                series = spec.series, state = chart, color = spec.color,
-                axisFormat = spec.axis, valueFormat = spec.axis, minRange = spec.minRange, gapMs = gap,
-                modifier = Modifier.fillMaxWidth().height(150.dp),
+    val tempValue: (Float) -> String = { if (unit == TempUnit.F) "%.1f °F".format(it) else "%.1f °C".format(it) }
+    val mbAxis: (Float) -> String = { if (it >= 1024) "%.1fG".format(it / 1024f) else "%.0fM".format(it) }
+    val mbValue: (Float) -> String = { if (it >= 1024) "%.2f GB".format(it / 1024f) else "%.0f MB".format(it) }
+    val pctAxis: (Float) -> String = { "%.0f%%".format(it) }
+    val pctValue: (Float) -> String = { "%.1f %%".format(it) }
+    val bands = remember(d) { chargingBands(d.timeline) }
+
+    val series: Series
+    val color: Color
+    var axis: (Float) -> String = pctAxis
+    var value: (Float) -> String = pctValue
+    var minRange = 5f
+    var fixedMin: Float? = null
+    var fixedMax: Float? = null
+    when (metric) {
+        AppMetric.Power -> {
+            series = seriesOf(d.timeline, pkg) { it.drawW.toFloat() }; color = c.power
+            axis = { "%.1fW".format(it) }; value = { "%.2f W".format(it) }; minRange = 1f; fixedMin = 0f
+        }
+        AppMetric.Cpu -> { series = seriesOf(d.timeline, pkg) { it.fgCpuPct }; color = c.voltage; fixedMin = 0f }
+        AppMetric.Gpu -> { series = seriesOf(d.timeline, pkg) { it.gpuPct }; color = c.current; fixedMin = 0f; fixedMax = 100f }
+        AppMetric.CpuTemp -> { series = seriesOf(d.timeline, pkg) { tc(it.cpuC) }; color = c.temp; axis = tempAxis; value = tempValue; minRange = 4f }
+        AppMetric.GpuTemp -> { series = seriesOf(d.timeline, pkg) { tc(it.gpuC) }; color = c.warn; axis = tempAxis; value = tempValue; minRange = 4f }
+        AppMetric.Ram -> { series = minuteSeries(d.minutes) { it.rssAvgKb / 1024f }; color = c.level; axis = mbAxis; value = mbValue; minRange = 50f }
+        AppMetric.GpuMem -> { series = seriesOf(d.timeline, pkg) { it.fgGpuKb / 1024f }; color = c.level; axis = mbAxis; value = mbValue; minRange = 20f }
+        AppMetric.CpuAll -> { series = minuteSeries(d.minutes) { it.cpuMs * 100f / (60_000f * cores) }; color = c.voltage; fixedMin = 0f }
+    }
+
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        AppMetric.entries.forEach { m ->
+            FilterChip(
+                selected = metric == m,
+                onClick = { metric = m },
+                label = { Text(m.label) },
+                leadingIcon = { Icon(m.icon, null, Modifier.size(16.dp)) },
+                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
             )
         }
     }
+    AppCard {
+        TimeChart(
+            series = series,
+            state = chart,
+            color = color,
+            bands = bands,
+            bandColor = c.charging,
+            axisFormat = axis,
+            valueFormat = value,
+            fixedMin = fixedMin,
+            fixedMax = fixedMax,
+            minRange = minRange,
+            gapMs = 90_000L,
+            animateKey = Triple(metric, period, d.timeline.size > 0),
+            emptyText = if (metric == AppMetric.Ram || metric == AppMetric.CpuAll) "Nothing recorded in this range" else "Not on screen in this range",
+            modifier = Modifier.fillMaxWidth().height(260.dp),
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "Drag to read · pinch to zoom · double-tap to reset",
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            androidx.compose.animation.AnimatedVisibility(chart.zoomed) {
+                TextButton(onClick = { chart.reset() }) { Text("Reset") }
+            }
+        }
+    }
 }
-
-private class ChartSpec(val title: String, val color: Color, val series: Series, val axis: (Float) -> String, val minRange: Float)
 
 /** Every recorded metric for this app: min / avg / max tables and the raw samples (behind "Show all metrics"). */
 @Composable

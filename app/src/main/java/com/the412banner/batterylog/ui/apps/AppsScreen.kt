@@ -182,7 +182,8 @@ private fun AppRow(s: AppSummary, sort: SortBy, top: Double, onClick: () -> Unit
             Column(Modifier.weight(1f)) {
                 Text(label, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
-                    "Screen ${Fmt.duration(s.fgMs)} · ${"%.2f".format(s.energyWh)} Wh" +
+                    "Screen ${Fmt.duration(s.fgMs)}" +
+                        (if (s.fgMs > 0 && s.energyMj <= 0.0) " · on charger" else if (s.energyMj > 0.0) " · ${"%.2f".format(s.energyWh)} Wh" else "") +
                         (if (s.drawW.n > 0) " · avg ${Fmt.watts(s.drawW.avg.toDouble())}" else ""),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
                 )
