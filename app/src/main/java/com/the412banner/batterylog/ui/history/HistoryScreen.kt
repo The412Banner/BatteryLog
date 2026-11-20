@@ -60,6 +60,8 @@ import com.the412banner.batterylog.ui.components.ChartState
 import com.the412banner.batterylog.ui.components.IconBadge
 import com.the412banner.batterylog.ui.components.LevelBar
 import com.the412banner.batterylog.ui.components.MiniStat
+import com.the412banner.batterylog.ui.components.batteriesSub
+import com.the412banner.batterylog.ui.components.batteriesValue
 import com.the412banner.batterylog.ui.components.SectionLabel
 import com.the412banner.batterylog.ui.components.TimeChart
 import com.the412banner.batterylog.ui.components.rememberChartState
@@ -281,8 +283,8 @@ private fun StatsGrid(ui: HistoryUi) {
         AppCard {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 MiniStat("On battery", Fmt.duration(st.batteryMs), Modifier.weight(1f))
-                MiniStat("Used", "${st.drained} %", Modifier.weight(1f), color = c.drain)
-                MiniStat("Charged", "${st.charged} %", Modifier.weight(1f), color = c.charging)
+                MiniStat("Used", batteriesValue(st.drained), Modifier.weight(1f), color = c.drain, sub = batteriesSub(st.drained))
+                MiniStat("Charged", batteriesValue(st.charged), Modifier.weight(1f), color = c.charging, sub = batteriesSub(st.charged))
             }
             Spacer(Modifier.height(14.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {

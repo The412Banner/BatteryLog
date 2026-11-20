@@ -66,6 +66,8 @@ import com.the412banner.batterylog.ui.components.ChartState
 import com.the412banner.batterylog.ui.components.IconBadge
 import com.the412banner.batterylog.ui.components.InfoRow
 import com.the412banner.batterylog.ui.components.MiniStat
+import com.the412banner.batterylog.ui.components.batteriesSub
+import com.the412banner.batterylog.ui.components.batteriesValue
 import com.the412banner.batterylog.ui.components.SectionCard
 import com.the412banner.batterylog.ui.components.TimeChart
 import com.the412banner.batterylog.ui.components.rememberChartState
@@ -206,8 +208,8 @@ fun RunContent(
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     MiniStat("Duration", Fmt.duration(r.durationMs))
                     MiniStat("Level", "${r.startCap} → ${r.endCap} %")
-                    MiniStat("Used", "${r.drained} %", color = c.drain)
-                    MiniStat("Charged", "${r.charged} %", color = c.charging)
+                    MiniStat("Used", batteriesValue(r.drained), color = c.drain, sub = batteriesSub(r.drained))
+                    MiniStat("Charged", batteriesValue(r.charged), color = c.charging, sub = batteriesSub(r.charged))
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(

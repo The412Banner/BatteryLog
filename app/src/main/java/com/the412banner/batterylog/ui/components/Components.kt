@@ -187,13 +187,31 @@ fun StatTile(
 
 /** Plain stat: small label over a value (for summary grids). */
 @Composable
-fun MiniStat(label: String, value: String, modifier: Modifier = Modifier, color: Color = MaterialTheme.colorScheme.onSurface) {
+fun MiniStat(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.onSurface,
+    sub: String? = null,
+) {
     Column(modifier) {
         Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
         Spacer(Modifier.height(2.dp))
         Text(value, style = MaterialTheme.typography.titleMedium.merge(NumberStyle), color = color, maxLines = 1)
+        if (sub != null) {
+            Text(sub, style = MaterialTheme.typography.bodySmall.merge(NumberStyle), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        }
     }
 }
+
+/** "205 %" over a period reads oddly; from one full battery up it is shown as batteries (2.1 batteries). */
+fun batteriesValue(pct: Int): String = when {
+    pct < 100 -> "$pct %"
+    pct < 105 -> "1 battery"
+    else -> "%.1f batteries".format(pct / 100.0)
+}
+
+fun batteriesSub(pct: Int): String? = if (pct >= 100) "$pct %" else null
 
 @Composable
 fun InfoRow(label: String, value: String, modifier: Modifier = Modifier, valueColor: Color = MaterialTheme.colorScheme.onSurface) {
