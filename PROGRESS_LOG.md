@@ -25,7 +25,7 @@ Newest entry first. Times are US Eastern.
 - 11-20 08:2x user feedback: two notifications -> one shared notification (ServiceNotification, both services on
   ID_SERVICE, stop = DETACH + refreshOrCancel) 539d0867; app names/icons need QUERY_ALL_PACKAGES (Android 11+ hides
   others); History "Used 205 %" confusing -> "2.1 batteries" + percent below d1d2389e (CI 44743927560 GREEN, user:
-  install when ready -> INSTALLED 08:31 EST, hash OK, crash log clean). Next: app page = one big History-style chart with metric chips 208cc13b (CI 44744871764 GREEN, sha df3d43e9…; user: yes install -> installing).
+  install when ready -> INSTALLED 08:31 EST, hash OK, crash log clean). Next: app page = one big History-style chart with metric chips 208cc13b (CI 44744871764 GREEN, sha df3d43e9…; user: yes install -> INSTALLED 08:42 EST, hash OK, crash log clean).
 - Honest limits shown to the user: per-app watts = whole-device power while the app is on screen; GPU load device-wide
   (credited to the app on screen); temperatures are device sensors; GPU memory and CPU time are truly per app.
 - CI 44741830834 FAILED (a `/*` inside a KDoc opened a nested comment); fix 6745640d -> CI 44742025471 GREEN (logic tests incl.
