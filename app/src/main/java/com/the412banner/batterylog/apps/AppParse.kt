@@ -39,7 +39,7 @@ object AppParse {
         return (((days * 24 + hr) * 60 + min) * 60 + sec) * 1000 + frac * 10
     }
 
-    /** `grep -H . <dir>/*/<file>` lines "path/<id>/<file>:value" -> id -> value. */
+    /** `grep -H .` over many files: lines "path/<id>/<file>:value" -> id -> value. */
     fun grepH(text: String): Map<String, String> {
         val m = HashMap<String, String>()
         for (line in text.lineSequence()) {
