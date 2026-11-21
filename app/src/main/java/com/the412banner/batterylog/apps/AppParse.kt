@@ -151,10 +151,11 @@ object AppParse {
     }
 
     /** Thermal readings in millidegrees (or degrees on some kernels) -> °C, NaN when not plausible. */
-    /** kgsl `gpubusy` ("busy total" of the last window) -> GPU load %; null when unreadable. */
+    /** kgsl `gpubusy` ("busy total" of the last window) -> GPU load %; null when unreadable. "0 0" = GPU idle. */
     fun kgslGpuBusy(text: String?): Float? {
         val n = text?.trim()?.split(Regex("\\s+"))?.mapNotNull { it.toLongOrNull() } ?: return null
-        if (n.size < 2 || n[1] <= 0) return null
+        if (n.size < 2) return null
+        if (n[1] <= 0) return 0f
         return (n[0] * 100f / n[1]).coerceIn(0f, 100f)
     }
 

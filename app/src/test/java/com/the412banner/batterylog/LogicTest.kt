@@ -201,7 +201,7 @@ class LogicTest {
         assertEquals("cpu", g.thermalGroup("cpu-1-0-0"))
         assertEquals(11.57f, g.kgslGpuBusy("  116299 1004827\n")!!, 0.01f)
         assertNull(g.kgslGpuBusy("head: Permission denied"))
-        assertNull(g.kgslGpuBusy("5 0"))
+        assertEquals(0f, g.kgslGpuBusy("      0       0")!!, 0.001f)   // GPU idle (Honor report 15:22)
         // Honor: CURRENT_NOW -294 (mA), CHARGE_COUNTER 5290 (mAh) at 91 %; the Elite reports µA / µAh.
         assertTrue(BatteryUnits.isMilli(5290, 91))
         assertEquals(-294_000, BatteryUnits.currentUa(-294, true))
