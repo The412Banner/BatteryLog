@@ -125,7 +125,8 @@ class HudOverlay(private val ctx: Context) {
             if (i > 0) sb.append(if (oneLine) "  " else "\n")
             if (part.label.isNotEmpty()) {
                 val s = sb.length
-                sb.append(part.label).append(' ')
+                // No-break space: a wrapped HUD breaks between items, never between a label and its value.
+                sb.append(part.label).append('\u00A0')
                 sb.setSpan(ForegroundColorSpan(Color.rgb(170, 180, 190)), s, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
             val s = sb.length

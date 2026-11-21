@@ -26,6 +26,9 @@ echo "== devfreq"
 for d in /sys/class/devfreq/*; do
   echo "${d##*/}: cur_freq=$(cat $d/cur_freq 2>&1) load=$(head -1 $d/load 2>&1) gpu_load=$(head -1 $d/gpu_load 2>&1)"
 done
+echo "== SurfaceFlinger (format + SurfaceView layers, for FPS)"
+dumpsys SurfaceFlinger --list 2>&1 | head -2
+dumpsys SurfaceFlinger --list 2>&1 | grep -F 'SurfaceView' | head -40
 echo "== power_supply/battery"
 for f in current_now current_avg voltage_now temp status capacity charge_counter; do
   echo "$f: $(cat /sys/class/power_supply/battery/$f 2>&1)"
