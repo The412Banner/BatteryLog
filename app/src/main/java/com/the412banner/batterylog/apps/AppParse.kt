@@ -90,6 +90,30 @@ object AppParse {
         }
     }
 
+    /**
+     * `dumpsys thermalservice` -> group -> hottest °C, from the HAL's current readings
+     * (android.os.Temperature types: 0 CPU, 1 GPU, 2 battery, 3 skin). Used when the sensor files can't be read.
+     */
+    fun halTemps(dump: String): Map<String, Float> {
+        val lines = dump.lines()
+        fun section(title: String): List<String> {
+            val i = lines.indexOfFirst { it.trim().startsWith(title) }
+            if (i < 0) return emptyList()
+            return lines.drop(i + 1).takeWhile { it.trim().startsWith("Temperature{") }
+        }
+        val rows = section("Current temperatures from HAL").ifEmpty { section("Cached temperatures") }
+        val re = Regex("""mValue=([-0-9.]+),\s*mType=(\d+)""")
+        val m = HashMap<String, Float>()
+        for (r in rows) {
+            val g = re.find(r) ?: continue
+            val v = g.groupValues[1].toFloatOrNull() ?: continue
+            val group = when (g.groupValues[2].toIntOrNull()) { 0 -> "cpu"; 1 -> "gpu"; 2 -> "battery"; 3 -> "skin"; else -> null } ?: continue
+            if (v.isNaN() || v !in -40f..150f) continue
+            m[group] = maxOf(m[group] ?: v, v)
+        }
+        return m
+    }
+
     /** Thermal readings in millidegrees (or degrees on some kernels) -> °C, NaN when not plausible. */
     fun milliC(raw: String?): Float {
         val v = raw?.trim()?.toFloatOrNull() ?: return Float.NaN

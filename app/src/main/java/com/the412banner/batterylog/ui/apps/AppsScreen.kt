@@ -92,6 +92,8 @@ fun AppsScreen(openApp: (String) -> Unit) {
     val running by AppMonitorService.running.collectAsStateWithLifecycle()
     val latest by AppMonitorService.latest.collectAsStateWithLifecycle()
     val error by AppMonitorService.lastError.collectAsStateWithLifecycle()
+    val access by AppMonitorService.access.collectAsStateWithLifecycle()
+    val shizuku by com.the412banner.batterylog.apps.ShizukuAccess.state.collectAsStateWithLifecycle()
     var period by rememberSaveable { mutableStateOf(Period.Today) }
     var sort by rememberSaveable { mutableStateOf(SortBy.Energy) }
     var list by remember { mutableStateOf<List<AppSummary>?>(null) }
@@ -126,13 +128,15 @@ fun AppsScreen(openApp: (String) -> Unit) {
                 subtitle = when {
                     !settings.perApp -> "Off"
                     error != null -> error
-                    running -> "Recording every ${settings.perAppSeconds} s"
+                    running -> "Recording every ${settings.perAppSeconds} s" + (access?.let { " · $it" } ?: "")
                     else -> "Starting…"
                 },
                 trailing = { PulseDot(c.temp, active = settings.perApp && running && error == null) },
             ) {
                 if (!settings.perApp) {
                     FilledTonalButton(onClick = { app.settings.update { it.copy(perApp = true) } }) { Text("Turn on") }
+                } else if (error != null && shizuku == com.the412banner.batterylog.apps.ShizukuAccess.State.NeedsPermission) {
+                    FilledTonalButton(onClick = { com.the412banner.batterylog.apps.ShizukuAccess.requestPermission() }) { Text("Allow Shizuku") }
                 } else latest?.let { t ->
                     val unit = settings.tempUnit
                     Text(

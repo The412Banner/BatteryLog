@@ -164,6 +164,35 @@ class LogicTest {
     }
 
     @Test
+    fun halTempsFromThermalserviceDump() {
+        val dump = """
+            Thermal Status: 3
+            Cached temperatures:
+            	Temperature{mValue=26.0, mType=3, mName=skin, mStatus=0}
+            HAL Ready: true
+            Current temperatures from HAL:
+            	Temperature{mValue=3.719, mType=6, mName=vbat, mStatus=0}
+            	Temperature{mValue=22.0, mType=2, mName=battery, mStatus=0}
+            	Temperature{mValue=33.2, mType=0, mName=CPU1, mStatus=0}
+            	Temperature{mValue=35.1, mType=0, mName=CPU0, mStatus=0}
+            	Temperature{mValue=27.4, mType=1, mName=GPU4, mStatus=0}
+            	Temperature{mValue=25.886, mType=3, mName=skin, mStatus=0}
+            	Temperature{mValue=26.2, mType=9, mName=nsp2, mStatus=0}
+            Current cooling devices from HAL:
+            	CoolingDevice{mValue=0, mType=2, mName=thermal-pause-2}
+        """.trimIndent()
+        val t = com.the412banner.batterylog.apps.AppParse.halTemps(dump)
+        assertEquals(35.1f, t["cpu"]!!, 0.01f)
+        assertEquals(27.4f, t["gpu"]!!, 0.01f)
+        assertEquals(25.886f, t["skin"]!!, 0.01f)
+        assertEquals(22.0f, t["battery"]!!, 0.01f)
+        assertEquals(4, t.size)
+        // Falls back to the cached list when the HAL section is missing.
+        val cached = com.the412banner.batterylog.apps.AppParse.halTemps("Cached temperatures:\n\tTemperature{mValue=41.5, mType=3, mName=skin, mStatus=1}\n")
+        assertEquals(41.5f, cached["skin"]!!, 0.01f)
+    }
+
+    @Test
     fun appRowsRoundTrip() {
         val t = com.the412banner.batterylog.apps.TRow(
             1000L, "com.x", -2.5, 80, false, 30f, 55f, 600f, 48f, 50f, 35f, Float.NaN, 31f, 12f, 4096, 2048,

@@ -26,7 +26,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
- * Per-app monitoring (root): every few seconds records device power, CPU/GPU load, temperatures and the
+ * Per-app monitoring (root or Shizuku): every few seconds records device power, CPU/GPU load, temperatures and the
  * app on screen, plus per-app CPU time, memory and GPU memory. Runs as its own foreground service.
  */
 class AppMonitorService : Service() {
@@ -68,8 +68,8 @@ class AppMonitorService : Service() {
 
     private suspend fun loop() {
         val app = BatteryLogApp.get(this)
-        // The app on screen comes from usage events; root grants that access once.
-        RootShell().apply { run("appops set $packageName GET_USAGE_STATS allow"); close() }
+        // The app on screen comes from usage events; root or Shizuku grants that access.
+        var usageGranted = false
         AppStore.prune(this, app.settings.current().keepDays)
         lastEventQuery = System.currentTimeMillis() - 60_000
         var lastNotify = 0L
@@ -78,11 +78,14 @@ class AppMonitorService : Service() {
             if (!s.perApp) break
             val tick = sampler?.sample()
             if (tick == null) {
-                _lastError.value = "Root access is needed"
+                _access.value = null
+                _lastError.value = "Needs root or Shizuku"
                 ServiceNotification.refreshOrCancel(this)
-                delay(30_000)
+                delay(if (ShizukuAccess.state.value == ShizukuAccess.State.NotRunning) 30_000 else 5_000)
                 continue
             }
+            if (!usageGranted) { sampler?.grantUsageAccess(packageName); usageGranted = true }
+            _access.value = sampler?.access
             _lastError.value = null
             val fg = foreground()
             if (tick.dtMs > 0) record(tick, fg)
@@ -153,6 +156,7 @@ class AppMonitorService : Service() {
         scope.cancel()
         sampler?.close()
         sampler = null
+        _access.value = null
         _running.value = false
         // Keep the shared notification if battery logging still runs; remove it otherwise.
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_DETACH)
@@ -165,6 +169,9 @@ class AppMonitorService : Service() {
 
         private val _running = MutableStateFlow(false)
         val running: StateFlow<Boolean> = _running.asStateFlow()
+        private val _access = MutableStateFlow<String?>(null)
+        /** "root" or "Shizuku" while recording. */
+        val access: StateFlow<String?> = _access.asStateFlow()
         private val _latest = MutableStateFlow<TRow?>(null)
         val latest: StateFlow<TRow?> = _latest.asStateFlow()
         private val _lastError = MutableStateFlow<String?>(null)

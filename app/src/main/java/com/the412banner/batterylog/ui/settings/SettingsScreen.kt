@@ -148,7 +148,7 @@ fun SettingsContent(settings: AppSettings, serviceActive: Boolean, updateAvailab
             }
         }
 
-        SectionCard("Per-app monitoring", Icons.Rounded.Apps, tint = c.temp, subtitle = "Needs root") {
+        SectionCard("Per-app monitoring", Icons.Rounded.Apps, tint = c.temp, subtitle = "Needs root or Shizuku") {
             SwitchRow("Per-app monitoring", s.perApp) { v -> set { it.copy(perApp = v) } }
             AnimatedVisibility(s.perApp) {
                 Column {
