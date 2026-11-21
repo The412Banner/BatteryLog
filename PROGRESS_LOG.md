@@ -11,6 +11,11 @@ Newest entry first. Times are US Eastern.
 ## Lessons learned (don't repeat these)
 - (none yet)
 
+## 2026-11-21 — GPL-3.0 license added (main)
+- Why: no license file; Orion Store marks repos without one "Not Open Source". User picked GPL-3.0.
+- Built: LICENSE (GitHub GPL-3.0 text) + README "License" section. Branch feat/gpl-license fast-forwarded to main; backup ref refs/backup/20261121/main-before-gpl-license = 7c35f212. Same day: fastlane icon + 8 screenshots added for store listings (feat/fastlane-metadata).
+- Open/Next: Orion submission (user).
+
 ## 2026-11-20 — v2.1.0 stable release (feat/per-app-monitor -> main)
 - User: "release a new stable" (08:4x EST, after per-app monitoring was installed and used on the Pocket FIT).
 - Backup refs/backup/20261120/main-before-per-app-monitor = 3d87f73b; main fast-forwarded to feat/per-app-monitor;
