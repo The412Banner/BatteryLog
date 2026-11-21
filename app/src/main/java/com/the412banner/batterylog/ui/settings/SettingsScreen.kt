@@ -158,6 +158,7 @@ fun SettingsContent(settings: AppSettings, serviceActive: Boolean, updateAvailab
                     Segmented(pc.map { "$it s" }, pc.indexOf(s.perAppSeconds).coerceAtLeast(0)) { i -> set { it.copy(perAppSeconds = pc[i]) } }
                     Spacer(Modifier.height(6.dp))
                     SwitchRow("Show all metrics", s.showAllMetrics) { v -> set { it.copy(showAllMetrics = v) } }
+                    SwitchRow("Use Shizuku instead of root", s.perAppShizuku) { v -> set { it.copy(perAppShizuku = v) } }
                 }
             }
         }

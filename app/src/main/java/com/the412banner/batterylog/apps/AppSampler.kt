@@ -2,6 +2,7 @@ package com.the412banner.batterylog.apps
 
 import android.content.Context
 import com.the412banner.batterylog.BatteryInfo
+import com.the412banner.batterylog.BatteryLogApp
 import com.the412banner.batterylog.RootHelper
 
 /** Per-app share of one sample interval. */
@@ -51,15 +52,22 @@ class AppSampler(private val ctx: Context) {
 
     fun close() { shell?.close(); shell = null }
 
-    /** Root first (rooted devices keep working as before), then Shizuku. */
+    private var pickedForShizuku: Boolean? = null
+
+    /** Root first (rooted devices keep working as before), then Shizuku; only Shizuku when the setting asks for it. */
     private fun shell(): PrivShell? {
+        val onlyShizuku = BatteryLogApp.get(ctx).settings.current().perAppShizuku
+        if (pickedForShizuku != null && pickedForShizuku != onlyShizuku) close()
         shell?.let { return it }
+        val shizukuReady = ShizukuAccess.refresh() == ShizukuAccess.State.Ready
         val s: PrivShell? = when {
+            onlyShizuku -> if (shizukuReady) ShizukuShell(ctx) else null
             RootHelper.rootCached() -> RootShell()
-            ShizukuAccess.refresh() == ShizukuAccess.State.Ready -> ShizukuShell(ctx)
+            shizukuReady -> ShizukuShell(ctx)
             else -> null
         }
         shell = s
+        pickedForShizuku = onlyShizuku
         zoneGroups = null
         return s
     }
