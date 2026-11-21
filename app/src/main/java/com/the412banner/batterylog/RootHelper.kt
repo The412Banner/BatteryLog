@@ -27,6 +27,9 @@ object RootHelper {
     /** Pipes [script] into a root shell; returns combined output + success. */
     fun run(script: String, timeoutSec: Long = 30): Result = exec(listOf("su"), script, timeoutSec)
 
+    /** Pipes [script] into a plain `sh` with the app's own rights. */
+    fun runAsApp(script: String, timeoutSec: Long = 30): Result = exec(listOf("sh"), script, timeoutSec)
+
     private fun exec(cmd: List<String>, stdin: String?, timeoutSec: Long): Result = runCatching {
         val p = ProcessBuilder(cmd).redirectErrorStream(true).start()
         if (stdin != null) {

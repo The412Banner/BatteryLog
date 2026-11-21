@@ -53,14 +53,15 @@ object ShizukuAccess {
 }
 
 /** [PrivShell] backed by a Shizuku user service ([ShellUserService]). */
-class ShizukuShell(private val ctx: Context) : PrivShell {
+class ShizukuShell(private val ctx: Context, private val name: String = "shell") : PrivShell {
     override val label = "Shizuku"
     @Volatile private var service: IShellService? = null
     private var conn: ServiceConnection? = null
     private val args by lazy {
         Shizuku.UserServiceArgs(ComponentName(ctx.packageName, ShellUserService::class.java.name))
             .daemon(false)
-            .processNameSuffix("shell")
+            .processNameSuffix(name)
+            .tag(name)
             .debuggable(false)
             .version(BuildConfig.VERSION_CODE)
     }

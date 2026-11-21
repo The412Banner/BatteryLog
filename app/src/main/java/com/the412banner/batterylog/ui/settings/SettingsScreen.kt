@@ -165,6 +165,8 @@ fun SettingsContent(settings: AppSettings, serviceActive: Boolean, updateAvailab
                     SwitchRow("Use Shizuku instead of root", s.perAppShizuku) { v -> set { it.copy(perAppShizuku = v) } }
                 }
             }
+            Spacer(Modifier.height(6.dp))
+            SensorReportButton()
         }
 
         HudSettingsCard()
@@ -236,6 +238,30 @@ private fun IntSlider(value: Int, range: IntRange, step: Int, onDone: (Int) -> U
         steps = steps,
         onValueChangeFinished = { onDone(kotlin.math.round(pos).toInt()) },
     )
+}
+
+/** Collects what the device exposes (sensors, GPU, battery) and shares it as a text file; also copied. */
+@Composable
+private fun SensorReportButton() {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var busy by remember { mutableStateOf(false) }
+    FilledTonalButton(enabled = !busy, onClick = {
+        busy = true
+        scope.launch {
+            val f = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { com.the412banner.batterylog.apps.SensorReport.build(ctx) }.getOrNull()
+            }
+            busy = false
+            if (f != null) {
+                runCatching {
+                    ctx.getSystemService(android.content.ClipboardManager::class.java)
+                        .setPrimaryClip(android.content.ClipData.newPlainText("BatteryLog sensor report", f.readText()))
+                }
+                com.the412banner.batterylog.ui.run.shareFile(ctx, f, "text/plain")
+            }
+        }
+    }) { Text(if (busy) "Reading sensors…" else "Share sensor report") }
 }
 
 @Composable

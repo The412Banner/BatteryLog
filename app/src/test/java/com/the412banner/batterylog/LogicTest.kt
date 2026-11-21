@@ -164,6 +164,34 @@ class LogicTest {
     }
 
     @Test
+    fun sensorReportNamesTheSourceOfEachReading() {
+        val raw = """
+            == thermal zones (zone | type | temp)
+            thermal_zone0 | cpu-0-0-0 | 45000
+            thermal_zone1 | cpu-1-0-0 | 105000
+            thermal_zone2 | battery | 31000
+            thermal_zone3 | gpuss-0 | cat: /sys/class/thermal/thermal_zone3/temp: Permission denied
+            == thermalservice
+            Current temperatures from HAL:
+            	Temperature{mValue=27.4, mType=1, mName=GPU4, mStatus=0}
+            	Temperature{mValue=25.0, mType=3, mName=skin, mStatus=0}
+            Current cooling devices from HAL:
+            == kgsl-3d0
+            gpu_busy_percentage: head: /sys/class/kgsl/kgsl-3d0/gpu_busy_percentage: Permission denied
+            gpuclk: 
+            == end
+        """.trimIndent()
+        val r = com.the412banner.batterylog.apps.SensorReport.interpret(raw)
+        assertTrue(r, r.contains("cpu: 105.0 °C from thermal_zone1 (cpu-1-0-0)"))
+        assertTrue(r, r.contains("gpu: 27.4 °C from Android's thermal list"))
+        assertTrue(r, r.contains("skin: 25.0 °C from Android's thermal list"))
+        assertTrue(r, r.contains("battery: 31.0 °C from thermal_zone2 (battery)"))
+        assertTrue(r, r.contains("ddr: none"))
+        assertTrue(r, r.contains("gpu busy: head: /sys/class/kgsl/kgsl-3d0/gpu_busy_percentage: Permission denied"))
+        assertTrue(r, r.contains("gpu clock: none"))
+    }
+
+    @Test
     fun halTempsFromThermalserviceDump() {
         val dump = """
             Thermal Status: 3
