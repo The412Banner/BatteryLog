@@ -121,14 +121,23 @@ object AppParse {
      * its BLAST child holds the buffers on Android 12+) first, else the app's own window layer.
      */
     fun sfLayerFor(list: String, pkg: String): String? {
-        val names = list.lines().map { it.trim() }.filter { it.contains(pkg) }
+        val names = list.lines().map { sfLayerName(it) }.filter { it.contains(pkg) }
         val sv = names.filter { it.startsWith("SurfaceView") || it.contains("SurfaceView[") }
         sv.firstOrNull { it.contains("BLAST") }?.let { return it }
         sv.firstOrNull()?.let { return it }
-        return names.firstOrNull {
+        val app = names.filter {
             it.contains("$pkg/") && !it.startsWith("ActivityRecord") && !it.contains("ActivityRecordInputSink") &&
                 !it.startsWith("Task=") && !it.contains("Splash")
         }
+        // The window's buffer layer is named "pkg/Activity#N"; "hash pkg/Activity#N" is its container (no frames on Android 16).
+        return app.firstOrNull { it.startsWith("$pkg/") } ?: app.firstOrNull()
+    }
+
+    /** One `--list` line -> layer name. Android 16 prints "RequestedLayerState{<name> parentId=… z=…}". */
+    fun sfLayerName(line: String): String {
+        val t = line.trim()
+        if (!t.startsWith("RequestedLayerState{")) return t
+        return t.removePrefix("RequestedLayerState{").substringBefore(" parentId=").removeSuffix("}").trim()
     }
 
     /**

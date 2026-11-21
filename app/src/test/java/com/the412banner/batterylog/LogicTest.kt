@@ -269,6 +269,16 @@ class LogicTest {
         assertEquals("SurfaceView[com.tencent.ig/com.winlator.star.XServerDisplayActivity](BLAST)#288902", P.sfLayerFor(list, "com.tencent.ig"))
         assertEquals("3ed49a com.termux/com.termux.app.TermuxActivity#212443", P.sfLayerFor(list, "com.termux"))
         assertEquals(null, P.sfLayerFor(list, "com.example.none"))
+        // Android 16 (Pocket FIT Elite, 11-21): names wrapped in RequestedLayerState{…}; frames are on the unhashed layer.
+        val list16 = """
+            RequestedLayerState{com.the412banner.batterylog.debug/com.the412banner.batterylog.MainActivity#10682 parentId=10458}
+            RequestedLayerState{30af06e com.the412banner.batterylog.debug/com.the412banner.batterylog.MainActivity#10458 parentId=10391}
+            RequestedLayerState{86df877 ActivityRecordInputSink com.the412banner.batterylog.debug/com.the412banner.batterylog.MainActivity#10395 parentId=10391 z=-2147483648}
+            RequestedLayerState{ActivityRecord{194067684 u0 com.the412banner.batterylog.debug/com.the412banner.batterylog.MainActivity#10391 parentId=10390}
+            RequestedLayerState{SurfaceView[com.game/com.game.Main](BLAST)#900 parentId=899}
+        """.trimIndent()
+        assertEquals("com.the412banner.batterylog.debug/com.the412banner.batterylog.MainActivity#10682", P.sfLayerFor(list16, "com.the412banner.batterylog.debug"))
+        assertEquals("SurfaceView[com.game/com.game.Main](BLAST)#900", P.sfLayerFor(list16, "com.game"))
 
         // 61 frames 1/60 s apart -> 60 fps; table ends 0.1 s before "now".
         val start = 5_000_000_000L
@@ -315,5 +325,8 @@ class LogicTest {
         val f = com.the412banner.batterylog.hud.HudText.parts(v, setOf(com.the412banner.batterylog.hud.HudMetric.CaseTemp), com.the412banner.batterylog.TempUnit.F)
         assertEquals("122°F", f.single().value)
         assertEquals("Case 122°F", com.the412banner.batterylog.hud.HudText.plain(f, true))
+        // A blocked GPU clock still says what it is (the label "GPU" is shared with load and temperature).
+        val noClk = com.the412banner.batterylog.hud.HudText.parts(v.copy(gpuMhz = Float.NaN), setOf(com.the412banner.batterylog.hud.HudMetric.GpuMhz), com.the412banner.batterylog.TempUnit.C)
+        assertEquals("GPU — MHz", com.the412banner.batterylog.hud.HudText.plain(noClk, true))
     }
 }

@@ -25,7 +25,7 @@ object HudText {
                 HudMetric.Fps -> HudPart("FPS", num(v.fps, 0))
                 HudMetric.Cpu -> HudPart("CPU", pct(v.cpuPct))
                 HudMetric.Gpu -> HudPart("GPU", pct(v.gpuPct))
-                HudMetric.GpuMhz -> HudPart("GPU", if (v.gpuMhz.isNaN()) "—" else "%.0f MHz".format(v.gpuMhz))
+                HudMetric.GpuMhz -> HudPart("GPU", if (v.gpuMhz.isNaN()) "— MHz" else "%.0f MHz".format(v.gpuMhz))
                 HudMetric.CpuTemp -> HudPart("CPU", temp(v.cpuC, unit), level(v.cpuC, 85f, 100f))
                 HudMetric.GpuTemp -> HudPart("GPU", temp(v.gpuC, unit), level(v.gpuC, 85f, 100f))
                 HudMetric.CaseTemp -> HudPart("Case", temp(v.caseC, unit), level(v.caseC, 45f, 55f))
