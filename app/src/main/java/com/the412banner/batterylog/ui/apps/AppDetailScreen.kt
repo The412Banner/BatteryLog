@@ -119,6 +119,7 @@ fun AppDetailScreen(pkg: String, back: () -> Unit) {
             Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            HudCard(pkg)
             Choice(Period.entries.map { it.label }, period.ordinal) { period = Period.entries[it] }
             if (d == null) {
                 Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -359,5 +360,33 @@ private fun AllMetrics(pkg: String, d: Detail, unit: TempUnit) {
                 Text(line, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
             }
         }
+    }
+}
+
+/** Per-app HUD switch + which metrics it shows in this app. */
+@Composable
+private fun HudCard(pkg: String) {
+    val hud by com.the412banner.batterylog.hud.HudStore.flow.collectAsStateWithLifecycle()
+    val metrics = hud.apps[pkg]
+    val on = metrics != null
+    SectionCard(
+        "HUD", Icons.Rounded.Speed, tint = LocalChartColors.current.temp,
+        subtitle = when {
+            !hud.enabled -> "HUD overlay is off in Settings"
+            on -> "Shows over this app"
+            else -> "Off for this app"
+        },
+        trailing = {
+            androidx.compose.material3.Switch(checked = on, onCheckedChange = { v ->
+                com.the412banner.batterylog.hud.HudStore.update { c ->
+                    val m = c.apps.toMutableMap()
+                    if (v) m[pkg] = com.the412banner.batterylog.hud.HudConfig.DEFAULT_METRICS else m.remove(pkg)
+                    // Switching it on for an app also turns the HUD itself on.
+                    c.copy(apps = m, enabled = if (v) true else c.enabled)
+                }
+            })
+        },
+    ) {
+        if (metrics != null) com.the412banner.batterylog.ui.hud.HudMetricChips(pkg)
     }
 }

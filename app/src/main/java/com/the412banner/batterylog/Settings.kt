@@ -29,9 +29,11 @@ data class AppSettings(
     val skippedVersion: String? = null,
     val lastUpdateCheck: Long = 0,
     val mode: LogMode = LogMode.Off,
-    /** Per-app monitoring through root (own foreground service). */
+    /** Per-app monitoring through root or Shizuku (own foreground service). */
     val perApp: Boolean = false,
     val perAppSeconds: Int = 5,
+    /** Per-app monitoring uses Shizuku even when root is available. */
+    val perAppShizuku: Boolean = false,
     /** Show every recorded metric (full tables) on the app detail screen. */
     val showAllMetrics: Boolean = false,
 ) {
@@ -85,6 +87,7 @@ class SettingsStore(context: Context) {
             mode = enumOf("mode", LogMode.values(), d.mode),
             perApp = prefs.getBoolean("perApp", d.perApp),
             perAppSeconds = prefs.getInt("perAppSeconds", d.perAppSeconds),
+            perAppShizuku = prefs.getBoolean("perAppShizuku", d.perAppShizuku),
             showAllMetrics = prefs.getBoolean("showAllMetrics", d.showAllMetrics),
         )
     }
@@ -110,6 +113,7 @@ class SettingsStore(context: Context) {
             .putString("mode", s.mode.name)
             .putBoolean("perApp", s.perApp)
             .putInt("perAppSeconds", s.perAppSeconds)
+            .putBoolean("perAppShizuku", s.perAppShizuku)
             .putBoolean("showAllMetrics", s.showAllMetrics)
             .apply()
     }

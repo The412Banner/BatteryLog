@@ -164,6 +164,35 @@ class LogicTest {
     }
 
     @Test
+    fun halTempsFromThermalserviceDump() {
+        val dump = """
+            Thermal Status: 3
+            Cached temperatures:
+            	Temperature{mValue=26.0, mType=3, mName=skin, mStatus=0}
+            HAL Ready: true
+            Current temperatures from HAL:
+            	Temperature{mValue=3.719, mType=6, mName=vbat, mStatus=0}
+            	Temperature{mValue=22.0, mType=2, mName=battery, mStatus=0}
+            	Temperature{mValue=33.2, mType=0, mName=CPU1, mStatus=0}
+            	Temperature{mValue=35.1, mType=0, mName=CPU0, mStatus=0}
+            	Temperature{mValue=27.4, mType=1, mName=GPU4, mStatus=0}
+            	Temperature{mValue=25.886, mType=3, mName=skin, mStatus=0}
+            	Temperature{mValue=26.2, mType=9, mName=nsp2, mStatus=0}
+            Current cooling devices from HAL:
+            	CoolingDevice{mValue=0, mType=2, mName=thermal-pause-2}
+        """.trimIndent()
+        val t = com.the412banner.batterylog.apps.AppParse.halTemps(dump)
+        assertEquals(35.1f, t["cpu"]!!, 0.01f)
+        assertEquals(27.4f, t["gpu"]!!, 0.01f)
+        assertEquals(25.886f, t["skin"]!!, 0.01f)
+        assertEquals(22.0f, t["battery"]!!, 0.01f)
+        assertEquals(4, t.size)
+        // Falls back to the cached list when the HAL section is missing.
+        val cached = com.the412banner.batterylog.apps.AppParse.halTemps("Cached temperatures:\n\tTemperature{mValue=41.5, mType=3, mName=skin, mStatus=1}\n")
+        assertEquals(41.5f, cached["skin"]!!, 0.01f)
+    }
+
+    @Test
     fun appRowsRoundTrip() {
         val t = com.the412banner.batterylog.apps.TRow(
             1000L, "com.x", -2.5, 80, false, 30f, 55f, 600f, 48f, 50f, 35f, Float.NaN, 31f, 12f, 4096, 2048,
@@ -174,5 +203,50 @@ class LogicTest {
         assertTrue(back.ddrC.isNaN())
         val m = com.the412banner.batterylog.apps.MRow(60_000L, "com.x", 10226, 1200, 4000, 5000, 300, 30_000, 75_000.0, 6)
         assertEquals(m, com.the412banner.batterylog.apps.MRow.parse(m.csv()))
+    }
+
+    @Test
+    fun surfaceFlingerLayerAndFps() {
+        val list = """
+            Task=1747#209296
+            ActivityRecord{7c7383f u0 com.tencent.ig/com.winlator.star.XServerDisplayActivity#209298
+            a503178 com.tencent.ig/com.winlator.star.XServerDisplayActivity#288890
+            SurfaceView[com.tencent.ig/com.winlator.star.XServerDisplayActivity]#288901
+            SurfaceView[com.tencent.ig/com.winlator.star.XServerDisplayActivity](BLAST)#288902
+            3ed49a com.termux/com.termux.app.TermuxActivity#212443
+        """.trimIndent()
+        val P = com.the412banner.batterylog.apps.AppParse
+        assertEquals("SurfaceView[com.tencent.ig/com.winlator.star.XServerDisplayActivity](BLAST)#288902", P.sfLayerFor(list, "com.tencent.ig"))
+        assertEquals("3ed49a com.termux/com.termux.app.TermuxActivity#212443", P.sfLayerFor(list, "com.termux"))
+        assertEquals(null, P.sfLayerFor(list, "com.example.none"))
+
+        // 61 frames 1/60 s apart -> 60 fps; table ends 0.1 s before "now".
+        val start = 5_000_000_000L
+        val step = 16_666_667L
+        val rows = (0..60).joinToString("\n") { i -> val t = start + i * step; "${t - 1000}\t$t\t${t - 2000}" }
+        val last = start + 60 * step
+        val fps = P.sfFps("16666666\n0\t0\t0\n$rows\n", last + 100_000_000L)!!
+        assertEquals(60f, fps, 0.5f)
+        assertEquals(0f, P.sfFps("6944444\n0\t0\t0\n0\t0\t0\n", 1L)!!, 0f)
+        assertEquals(0f, P.sfFps("16666666\n$rows\n", last + 3_000_000_000L)!!, 0f)
+        assertEquals(null, P.sfFps("", 1L))
+    }
+
+    @Test
+    fun hudTextParts() {
+        val v = com.the412banner.batterylog.hud.HudValues(
+            fps = 59.6f, cpuPct = 41f, gpuPct = 77f, gpuMhz = 1050f, cpuC = 101f, gpuC = 88f, caseC = 50f,
+            battC = 33f, battPct = 15, watts = -17.6, charging = false, time = 0L,
+        )
+        val all = com.the412banner.batterylog.hud.HudMetric.entries.toSet()
+        val parts = com.the412banner.batterylog.hud.HudText.parts(v, all, com.the412banner.batterylog.TempUnit.C)
+        assertEquals("FPS", parts[0].label); assertEquals("60", parts[0].value)
+        assertEquals(2, parts.first { it.value == "101°C" }.level)
+        assertEquals(1, parts.first { it.label == "Case" }.level)
+        assertEquals("17.6 W", parts.first { it.value.endsWith(" W") }.value)
+        assertEquals(1, parts.first { it.value == "15%" }.level)
+        val f = com.the412banner.batterylog.hud.HudText.parts(v, setOf(com.the412banner.batterylog.hud.HudMetric.CaseTemp), com.the412banner.batterylog.TempUnit.F)
+        assertEquals("122°F", f.single().value)
+        assertEquals("Case 122°F", com.the412banner.batterylog.hud.HudText.plain(f, true))
     }
 }

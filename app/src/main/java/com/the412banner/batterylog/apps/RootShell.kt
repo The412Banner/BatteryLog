@@ -4,14 +4,15 @@ import java.io.BufferedReader
 import java.io.Writer
 
 /** One long-lived `su` shell for frequent sampling (spawning su every few seconds is slow and noisy). */
-class RootShell {
+class RootShell : PrivShell {
+    override val label = "root"
     private var proc: Process? = null
     private var writer: Writer? = null
     private var reader: BufferedReader? = null
     private var counter = 0L
 
     @Synchronized
-    fun run(script: String): String? {
+    override fun run(script: String): String? {
         repeat(2) {
             val out = runCatching { runOnce(script) }.getOrNull()
             if (out != null) return out
@@ -45,7 +46,7 @@ class RootShell {
     }
 
     @Synchronized
-    fun close() {
+    override fun close() {
         runCatching { writer?.write("exit\n"); writer?.flush() }
         runCatching { proc?.destroy() }
         proc = null; writer = null; reader = null

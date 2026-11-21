@@ -21,6 +21,8 @@ class BatteryLogApp : Application() {
         super.onCreate()
         setup(this)
         Notifier.createChannels(this)
+        com.the412banner.batterylog.apps.ShizukuAccess.init()
+        com.the412banner.batterylog.hud.HudStore.init(this)
         updates.clearDownloads()
         runCatching { UpdateScheduler.schedule(this, settings.current().autoUpdateCheck) }
         // Per-app monitoring follows its setting (switching off is handled by the service loop).

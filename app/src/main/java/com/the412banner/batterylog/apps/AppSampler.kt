@@ -2,6 +2,8 @@ package com.the412banner.batterylog.apps
 
 import android.content.Context
 import com.the412banner.batterylog.BatteryInfo
+import com.the412banner.batterylog.BatteryLogApp
+import com.the412banner.batterylog.RootHelper
 
 /** Per-app share of one sample interval. */
 data class AppTick(val pkg: String, val uid: Int, val cpuMs: Long, val rssKb: Long, val gpuKb: Long)
@@ -24,9 +26,12 @@ data class DeviceTick(
     val apps: Map<String, AppTick>,
 )
 
-/** Collects one sample through a root shell: processes, CPU, GPU, temperatures; battery from BatteryManager. */
+/**
+ * Collects one sample through a root shell, or Shizuku when there is no root: processes, CPU, GPU,
+ * temperatures; battery from BatteryManager.
+ */
 class AppSampler(private val ctx: Context) {
-    private val shell = RootShell()
+    private var shell: PrivShell? = null
     private var prevCpu = HashMap<Int, Long>()        // pid -> cpu ms
     private var prevStat: Pair<Long, Long>? = null
     private var prevTime = 0L
@@ -42,15 +47,70 @@ class AppSampler(private val ctx: Context) {
         echo @DONE
     """.trimIndent()
 
-    fun close() = shell.close()
+    /** "root" or "Shizuku" while a shell is in use, else null. */
+    val access: String? get() = shell?.label
 
-    /** Null when root is not available. */
+    fun close() { shell?.close(); shell = null }
+
+    private var pickedForShizuku: Boolean? = null
+
+    /** Root first (rooted devices keep working as before), then Shizuku; only Shizuku when the setting asks for it. */
+    private fun shell(): PrivShell? {
+        val onlyShizuku = BatteryLogApp.get(ctx).settings.current().perAppShizuku
+        if (pickedForShizuku != null && pickedForShizuku != onlyShizuku) close()
+        shell?.let { return it }
+        val shizukuReady = ShizukuAccess.refresh() == ShizukuAccess.State.Ready
+        val s: PrivShell? = when {
+            onlyShizuku -> if (shizukuReady) ShizukuShell(ctx) else null
+            RootHelper.rootCached() -> RootShell()
+            shizukuReady -> ShizukuShell(ctx)
+            else -> null
+        }
+        shell = s
+        pickedForShizuku = onlyShizuku
+        zoneGroups = null
+        return s
+    }
+
+    /** Runs [script] in the current shell; drops the shell on failure so the next call picks again. */
+    private fun run(script: String): String? {
+        val sh = shell() ?: return null
+        val out = sh.run(script)
+        if (out == null) close()
+        return out
+    }
+
+    private var fpsPkg = ""
+    private var fpsLayer: String? = null
+    private var fpsPicked = 0L
+
+    /** Frames per second of [pkg]'s window (SurfaceFlinger frame times); NaN when unknown. */
+    fun fps(pkg: String): Float {
+        if (pkg.isEmpty()) return Float.NaN
+        val now = System.currentTimeMillis()
+        if (pkg != fpsPkg || fpsLayer == null) {
+            fpsPkg = pkg
+            fpsLayer = run("dumpsys SurfaceFlinger --list 2>/dev/null")?.let { AppParse.sfLayerFor(it, pkg) }
+            fpsPicked = now
+        }
+        val layer = fpsLayer ?: return Float.NaN
+        val q = "'" + layer.replace("'", "'\\''") + "'"
+        val f = run("dumpsys SurfaceFlinger --latency $q 2>/dev/null")?.let { AppParse.sfFps(it, System.nanoTime()) }
+        // Layer gone, or still nothing after a while (the game may have opened its own surface): look again.
+        if (f == null || (f <= 0f && now - fpsPicked > 10_000)) fpsLayer = null
+        return f ?: Float.NaN
+    }
+
+    /** Lets BatteryLog see which app is on screen (usage access), granted through the shell. */
+    fun grantUsageAccess(pkg: String) { run("appops set $pkg GET_USAGE_STATS allow") }
+
+    /** Null when neither root nor Shizuku is available. */
     fun sample(): DeviceTick? {
         if (zoneGroups == null) {
-            val types = shell.run("grep -H . /sys/class/thermal/thermal_zone*/type 2>/dev/null") ?: return null
+            val types = run("grep -H . /sys/class/thermal/thermal_zone*/type 2>/dev/null") ?: return null
             zoneGroups = AppParse.grepH(types).mapNotNull { (zone, type) -> AppParse.thermalGroup(type)?.let { zone to it } }.toMap()
         }
-        val out = shell.run(SCRIPT) ?: return null
+        val out = run(SCRIPT) ?: return null
         val sec = sections(out)
         val now = System.currentTimeMillis()
         val dt = if (prevTime == 0L) 0L else now - prevTime
@@ -79,6 +139,12 @@ class AppSampler(private val ctx: Context) {
             val g = groups[zone] ?: continue
             val c = AppParse.milliC(raw)
             if (!c.isNaN()) temps[g] = maxOf(temps[g] ?: c, c)
+        }
+        // Without root many phones (Samsung among them) hide the sensor files; Android's own list still works.
+        if (temps["cpu"] == null || temps["gpu"] == null || temps["skin"] == null) {
+            run("dumpsys thermalservice 2>/dev/null")?.let { dump ->
+                for ((g, c) in AppParse.halTemps(dump)) if (temps[g] == null) temps[g] = c
+            }
         }
 
         // Per-app CPU (delta), memory and GPU memory, grouped by package.
@@ -109,9 +175,9 @@ class AppSampler(private val ctx: Context) {
         )
     }
 
-    /** Android's own estimate per app since the last full charge (mAh), via root. */
+    /** Android's own estimate per app since the last full charge (mAh), via root or Shizuku. */
     fun androidEstimates(): Map<Int, Double> =
-        shell.run("dumpsys batterystats --checkin 2>/dev/null | grep ',pwi,uid,'")?.let { AppParse.batteryStatsUid(it) } ?: emptyMap()
+        run("dumpsys batterystats --checkin 2>/dev/null | grep ',pwi,uid,'")?.let { AppParse.batteryStatsUid(it) } ?: emptyMap()
 
     private fun sections(out: String): Map<String, String> {
         val m = HashMap<String, String>()

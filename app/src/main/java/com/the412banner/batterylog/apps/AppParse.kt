@@ -90,6 +90,64 @@ object AppParse {
         }
     }
 
+    /**
+     * `dumpsys thermalservice` -> group -> hottest °C, from the HAL's current readings
+     * (android.os.Temperature types: 0 CPU, 1 GPU, 2 battery, 3 skin). Used when the sensor files can't be read.
+     */
+    fun halTemps(dump: String): Map<String, Float> {
+        val lines = dump.lines()
+        fun section(title: String): List<String> {
+            val i = lines.indexOfFirst { it.trim().startsWith(title) }
+            if (i < 0) return emptyList()
+            return lines.drop(i + 1).takeWhile { it.trim().startsWith("Temperature{") }
+        }
+        val rows = section("Current temperatures from HAL").ifEmpty { section("Cached temperatures") }
+        val re = Regex("""mValue=([-0-9.]+),\s*mType=(\d+)""")
+        val m = HashMap<String, Float>()
+        for (r in rows) {
+            val g = re.find(r) ?: continue
+            val v = g.groupValues[1].toFloatOrNull() ?: continue
+            val group = when (g.groupValues[2].toIntOrNull()) { 0 -> "cpu"; 1 -> "gpu"; 2 -> "battery"; 3 -> "skin"; else -> null } ?: continue
+            if (v.isNaN() || v !in -40f..150f) continue
+            m[group] = maxOf(m[group] ?: v, v)
+        }
+        return m
+    }
+
+    /**
+     * `dumpsys SurfaceFlinger --list` -> the layer that gets [pkg]'s frames: a SurfaceView (games, players;
+     * its BLAST child holds the buffers on Android 12+) first, else the app's own window layer.
+     */
+    fun sfLayerFor(list: String, pkg: String): String? {
+        val names = list.lines().map { it.trim() }.filter { it.contains(pkg) }
+        val sv = names.filter { it.startsWith("SurfaceView") || it.contains("SurfaceView[") }
+        sv.firstOrNull { it.contains("BLAST") }?.let { return it }
+        sv.firstOrNull()?.let { return it }
+        return names.firstOrNull {
+            it.contains("$pkg/") && !it.startsWith("ActivityRecord") && !it.contains("ActivityRecordInputSink") &&
+                !it.startsWith("Task=") && !it.contains("Splash")
+        }
+    }
+
+    /**
+     * `dumpsys SurfaceFlinger --latency <layer>` -> frames per second over the last second of presented frames.
+     * 0 when the layer shows nothing new (all zeros or older than 1.5 s); null when the output has no frame table.
+     */
+    fun sfFps(text: String, nowNs: Long): Float? {
+        val rows = text.lines().map { it.trim() }.filter { it.isNotEmpty() }
+        if (rows.isEmpty() || rows[0].toLongOrNull() == null) return null
+        val times = rows.drop(1).mapNotNull { r ->
+            val f = r.split(Regex("\\s+"))
+            f.getOrNull(1)?.toLongOrNull()?.takeIf { it in 1 until Long.MAX_VALUE }
+        }.sorted()
+        if (times.size < 2) return 0f
+        val last = times.last()
+        if (nowNs - last > 1_500_000_000L) return 0f
+        val win = times.filter { it >= last - 1_000_000_000L }
+        if (win.size < 2) return 0f
+        return (win.size - 1) * 1e9f / (win.last() - win.first()).toFloat()
+    }
+
     /** Thermal readings in millidegrees (or degrees on some kernels) -> °C, NaN when not plausible. */
     fun milliC(raw: String?): Float {
         val v = raw?.trim()?.toFloatOrNull() ?: return Float.NaN
