@@ -104,6 +104,9 @@ class AppSampler(private val ctx: Context) {
     /** Lets BatteryLog see which app is on screen (usage access), granted through the shell. */
     fun grantUsageAccess(pkg: String) { run("appops set $pkg GET_USAGE_STATS allow") }
 
+    /** Allows "display over other apps" for the HUD through the shell (no trip to Android's restricted settings). */
+    fun grantOverlay(pkg: String) { run("appops set $pkg SYSTEM_ALERT_WINDOW allow") }
+
     /** Null when neither root nor Shizuku is available. */
     fun sample(): DeviceTick? {
         if (zoneGroups == null) {

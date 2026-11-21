@@ -9,6 +9,7 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.provider.Settings
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.the412banner.batterylog.BatteryLogApp
@@ -22,13 +23,15 @@ import com.the412banner.batterylog.hud.HudValues
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Per-app monitoring (root or Shizuku): every few seconds records device power, CPU/GPU load, temperatures and the
@@ -76,6 +79,7 @@ class AppMonitorService : Service() {
         val app = BatteryLogApp.get(this)
         // The app on screen comes from usage events; root or Shizuku grants that access.
         var usageGranted = false
+        overlayAsk.set(true)
         AppStore.prune(this, app.settings.current().keepDays)
         lastEventQuery = System.currentTimeMillis() - 60_000
         var lastNotify = 0L
@@ -88,10 +92,13 @@ class AppMonitorService : Service() {
                 _access.value = null
                 _lastError.value = "Needs root or Shizuku"
                 ServiceNotification.refreshOrCancel(this)
-                delay(if (ShizukuAccess.state.value == ShizukuAccess.State.NotRunning) 30_000 else 5_000)
+                nap(if (ShizukuAccess.state.value == ShizukuAccess.State.NotRunning) 30_000 else 5_000)
                 continue
             }
             if (!usageGranted) { sampler?.grantUsageAccess(packageName); usageGranted = true }
+            if (overlayAsk.getAndSet(false) && HudStore.current().enabled && !Settings.canDrawOverlays(this)) {
+                sampler?.grantOverlay(packageName)
+            }
             _access.value = sampler?.access
             _lastError.value = null
             val fg = foreground()
@@ -103,10 +110,13 @@ class AppMonitorService : Service() {
                 ServiceNotification.refreshOrCancel(this)
             }
             // While the HUD is on screen it (and the recording) refreshes every second.
-            delay(if (hudShown) 1000L else s.perAppSeconds.coerceIn(1, 60) * 1000L)
+            nap(if (hudShown) 1000L else s.perAppSeconds.coerceIn(1, 60) * 1000L)
         }
         stopSelf()
     }
+
+    /** Waits [ms], or less when [requestOverlay] is called. */
+    private suspend fun nap(ms: Long) { withTimeoutOrNull(ms) { wake.receive() } }
 
     /** Shows the HUD over [fg] when it has one; returns true while shown. */
     private fun updateHud(t: DeviceTick, fg: String, unit: com.the412banner.batterylog.TempUnit): Boolean {
@@ -203,6 +213,15 @@ class AppMonitorService : Service() {
         val latest: StateFlow<TRow?> = _latest.asStateFlow()
         private val _lastError = MutableStateFlow<String?>(null)
         val lastError: StateFlow<String?> = _lastError.asStateFlow()
+
+        private val overlayAsk = AtomicBoolean(true)
+        private val wake = Channel<Unit>(Channel.CONFLATED)
+
+        /** Asks the running service to allow "display over other apps" through root or Shizuku on its next pass. */
+        fun requestOverlay() {
+            overlayAsk.set(true)
+            wake.trySend(Unit)
+        }
 
         fun start(ctx: Context) {
             runCatching { ContextCompat.startForegroundService(ctx, Intent(ctx, AppMonitorService::class.java)) }

@@ -35,16 +35,19 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
 import com.the412banner.batterylog.AppSettings
 import com.the412banner.batterylog.BatteryLogApp
 import com.the412banner.batterylog.BatteryLogService
@@ -256,6 +259,31 @@ private fun HudSettingsCard() {
             )
         }
     }
+    val scope = rememberCoroutineScope()
+    // With root or Shizuku the monitor service allows it itself (works where Android marks the setting
+    // "restricted" for apps installed from a file); otherwise Android's settings page.
+    fun allowOverlay() {
+        scope.launch {
+            val priv = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                com.the412banner.batterylog.apps.ShizukuAccess.refresh() == com.the412banner.batterylog.apps.ShizukuAccess.State.Ready ||
+                    com.the412banner.batterylog.RootHelper.rootCached()
+            }
+            if (priv) {
+                com.the412banner.batterylog.apps.AppMonitorService.requestOverlay()
+                repeat(40) {
+                    if (android.provider.Settings.canDrawOverlays(ctx)) { canDraw = true; return@launch }
+                    kotlinx.coroutines.delay(250)
+                }
+            }
+            askOverlay()
+        }
+    }
+    LaunchedEffect(hud.enabled, canDraw) {
+        while (hud.enabled && !canDraw) {
+            kotlinx.coroutines.delay(1000)
+            canDraw = android.provider.Settings.canDrawOverlays(ctx)
+        }
+    }
     SectionCard(
         "HUD overlay", Icons.Rounded.Tune, tint = c.temp,
         subtitle = if (hud.apps.isEmpty()) "No games added" else "On for ${hud.apps.size} app" + if (hud.apps.size == 1) "" else "s",
@@ -265,13 +293,13 @@ private fun HudSettingsCard() {
             if (v) {
                 // The HUD rides on per-app monitoring (app on screen + sensors).
                 app.settings.update { it.copy(perApp = true) }
-                if (!canDraw) askOverlay()
+                if (!canDraw) allowOverlay()
             }
         }
         AnimatedVisibility(hud.enabled) {
             Column {
                 if (!canDraw) {
-                    FilledTonalButton(onClick = { askOverlay() }) { Text("Allow display over other apps") }
+                    FilledTonalButton(onClick = { allowOverlay() }) { Text("Allow display over other apps") }
                     Spacer(Modifier.height(6.dp))
                 }
                 Label("Corner")
