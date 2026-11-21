@@ -3,6 +3,7 @@
 Newest entry first. Times are US Eastern.
 
 ## Resume point
+- **feat/hud-auto-overlay (11-21 ~14:5x EST):** 6d409f7a = HUD switch / button allow "display over other apps" through root or Shizuku (appops), Android settings page only without them. CI 44942433196 running. NOT device-tested. Install needs user yes.
 - **v2.2.0 STABLE = Latest** (11-21 13:40:49 EST, tag -> c0466f804458edaf202830e82bbe89ece80a1a6c = release run 44936374758 headSha; HUD overlay + game picker + Shizuku mode). Asset BatteryLog-v2.2.0-c0466f80.apk 3,669,815 B sha256 da20a49d… (= .sha256, AOSP testkey a40da80a). FIT + Elite INSTALLED the release APK 14:14 EST (user yes; pm install -r, base.apk sha da20a49d = asset, vc 11 / 2.2.0, no crash). HUD in a game and Shizuku mode NOT device-tested.
 - **feat/hud-overlay (11-21):** 42d83a41 ("Add a game" picker, CI 44873722932 green) INSTALLED FIT + Elite 13:20 EST (user: "yes install it on both"; base.apk sha 082b44fb on both, no crash). HUD not tried in a game yet. Shizuku mode not tried (Shizuku not on FIT/Elite).
 - **v2.1.0 STABLE = Latest** (11-20 08:55 EST, tag -> d72fd40e = release run 44747786224; per-app monitoring). Pocket FIT runs 208cc13b (same code, versionName 2.0.0) -> its updater should offer 2.1.0 (not yet tried).
@@ -12,6 +13,12 @@ Newest entry first. Times are US Eastern.
 
 ## Lessons learned (don't repeat these)
 - (none yet)
+
+## 2026-11-21 — HUD: allow the overlay through root or Shizuku (`feat/hud-auto-overlay`, IN PROGRESS)
+**Why:** user's friend on an Honor Magic 8 Pro (BatteryLog installed from the APK) found "display over other apps" blocked as a restricted setting (Android 15+ restricts it for apps installed from a file; fix by hand = App info → ⋮ → Allow restricted settings). User: "yes add the auto overlay permissionz".
+**Change (6d409f7a):** `AppSampler.grantOverlay` = `appops set <pkg> SYSTEM_ALERT_WINDOW allow` through the current shell. `AppMonitorService`: tries it once per service start and on `requestOverlay()` when the HUD is on and overlays aren't allowed; waits use `nap()` (Channel wake) so a request is handled at once. Settings HUD card: switch-on and the "Allow display over other apps" button call `allowOverlay()` = if Shizuku ready or root → requestOverlay + wait up to 10 s for `canDrawOverlays`, else Android's overlay settings page; card re-checks the permission every 1 s while the HUD is on and not allowed.
+**Friend's Honor HUD screenshot (14:38 EST, seen 14:40):** HUD runs over Discord, but GPU % and GPU MHz show "—" (kgsl files likely unreadable from the shell), CPU 105 °C (friend: not real; a stray sensor or HAL value wins the hottest-of-group pick), Case 25 °C / Bat 25 °C, 0.0 W (possible current unit issue on Honor). Root vs Shizuku on that phone unknown. Needs a raw sensor dump from the device to fix; sensor-report button offered to the user.
+**CI:** 44942433196 running. **Not tested:** on a device.
 
 ## 2026-11-21 — v2.2.0 stable release (feat/hud-overlay -> main, DONE)
 - User: "merge and make a new stable" (11-21 ~13:3x EST), after the picker build 42d83a41 was installed on FIT + Elite. User was told the HUD was not tried in a game and Shizuku mode not tried; decision recorded.
