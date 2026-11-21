@@ -283,6 +283,23 @@ class LogicTest {
     }
 
     @Test
+    fun hudPositionGrid() {
+        val c = com.the412banner.batterylog.hud.HudConfig()
+        // Older settings (corner only) map onto the grid.
+        assertEquals(0, c.copy(corner = 0).cell)
+        assertEquals(2, c.copy(corner = 1).cell)
+        assertEquals(6, c.copy(corner = 2).cell)
+        assertEquals(8, c.copy(corner = 3).cell)
+        val topCenter = c.at(0, 1)
+        assertEquals(1, topCenter.pos); assertEquals(0, topCenter.row); assertEquals(1, topCenter.col)
+        assertEquals(0, topCenter.x); assertEquals(24, topCenter.y)
+        val middle = c.at(1, 1)
+        assertEquals(4, middle.cell); assertEquals(0, middle.x); assertEquals(0, middle.y)
+        val bottomRight = c.copy(corner = 0).at(2, 2)
+        assertEquals(8, bottomRight.cell); assertEquals(24, bottomRight.x); assertEquals(24, bottomRight.y)
+    }
+
+    @Test
     fun hudTextParts() {
         val v = com.the412banner.batterylog.hud.HudValues(
             fps = 59.6f, cpuPct = 41f, gpuPct = 77f, gpuMhz = 1050f, cpuC = 101f, gpuC = 88f, caseC = 50f,

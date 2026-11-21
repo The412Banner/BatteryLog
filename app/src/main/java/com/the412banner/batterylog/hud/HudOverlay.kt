@@ -72,12 +72,8 @@ class HudOverlay(private val ctx: Context) {
             cornerRadius = 7 * d
             setColor(Color.argb((cfg.opacity.coerceIn(0, 100) * 255) / 100, 0, 0, 0))
         }
-        p.gravity = when (cfg.corner) {
-            1 -> Gravity.TOP or Gravity.END
-            2 -> Gravity.BOTTOM or Gravity.START
-            3 -> Gravity.BOTTOM or Gravity.END
-            else -> Gravity.TOP or Gravity.START
-        }
+        p.gravity = (when (cfg.row) { 1 -> Gravity.CENTER_VERTICAL; 2 -> Gravity.BOTTOM; else -> Gravity.TOP }) or
+            (when (cfg.col) { 1 -> Gravity.CENTER_HORIZONTAL; 2 -> Gravity.END; else -> Gravity.START })
         p.x = cfg.x
         p.y = cfg.y
         // Android lets touches pass through another app's window only when it is at most 80 % opaque.
@@ -99,13 +95,16 @@ class HudOverlay(private val ctx: Context) {
             val p = params ?: return@setOnTouchListener false
             val cfg = applied ?: return@setOnTouchListener false
             if (cfg.locked) return@setOnTouchListener false
-            val signX = if (cfg.corner == 1 || cfg.corner == 3) -1 else 1
-            val signY = if (cfg.corner >= 2) -1 else 1
+            // Offsets grow away from the anchored edge; on a centered axis they are signed from the middle.
+            val signX = if (cfg.col == 2) -1 else 1
+            val signY = if (cfg.row == 2) -1 else 1
             when (e.action) {
                 MotionEvent.ACTION_DOWN -> { downX = e.rawX; downY = e.rawY; startX = p.x; startY = p.y; true }
                 MotionEvent.ACTION_MOVE -> {
-                    p.x = (startX + signX * (e.rawX - downX)).toInt().coerceAtLeast(0)
-                    p.y = (startY + signY * (e.rawY - downY)).toInt().coerceAtLeast(0)
+                    val nx = (startX + signX * (e.rawX - downX)).toInt()
+                    val ny = (startY + signY * (e.rawY - downY)).toInt()
+                    p.x = if (cfg.col == 1) nx else nx.coerceAtLeast(0)
+                    p.y = if (cfg.row == 1) ny else ny.coerceAtLeast(0)
                     runCatching { wm.updateViewLayout(v, p) }
                     true
                 }

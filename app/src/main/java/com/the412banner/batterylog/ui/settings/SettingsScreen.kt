@@ -328,15 +328,19 @@ private fun HudSettingsCard() {
                     FilledTonalButton(onClick = { allowOverlay() }) { Text("Allow display over other apps") }
                     Spacer(Modifier.height(6.dp))
                 }
-                Label("Corner")
-                Segmented(listOf("Top L", "Top R", "Bottom L", "Bottom R"), hud.corner) { i -> set { it.copy(corner = i, x = 24, y = 24) } }
+                Label("Position")
+                Segmented(listOf("Top", "Middle", "Bottom"), hud.row) { r -> set { it.at(r, it.col) } }
+                Spacer(Modifier.height(6.dp))
+                Segmented(listOf("Left", "Center", "Right"), hud.col) { c -> set { it.at(it.row, c) } }
+                Spacer(Modifier.height(8.dp))
+                Label("Layout")
+                Segmented(listOf("Horizontal", "Vertical"), if (hud.oneLine) 0 else 1) { i -> set { it.copy(oneLine = i == 0) } }
                 Spacer(Modifier.height(8.dp))
                 Label("Size")
                 Segmented(listOf("Small", "Medium", "Large"), hud.size) { i -> set { it.copy(size = i) } }
                 Spacer(Modifier.height(8.dp))
                 Label("Background ${hud.opacity} %")
                 IntSlider(hud.opacity, 0..100, 10) { v -> set { it.copy(opacity = v) } }
-                SwitchRow("One line", hud.oneLine) { v -> set { it.copy(oneLine = v) } }
                 SwitchRow("Lock position", hud.locked, sub = if (hud.locked) "Touches go through to the game" else "Drag the HUD to move it") { v -> set { it.copy(locked = v) } }
                 Spacer(Modifier.height(8.dp))
                 Label("Games")
