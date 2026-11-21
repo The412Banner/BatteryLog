@@ -3,6 +3,7 @@
 Newest entry first. Times are US Eastern.
 
 ## Resume point
+- **v2.2.1 stable release IN PROGRESS (11-21 ~16:0x EST):** user "make a new stable" + "yes install on elite and test, then make stable". main ff to feat/hud-auto-overlay 0d0747ee (backup refs/backup/20261121/main-before-hud-auto-overlay = b9856a16) + release commit 7baeae24 (vc 15 / 2.2.1). Code == Elite-tested 0d0747ee build (diff = version, notes, README).
 - **11-21 15:4x EST pre-stable checks:** Elite HUD position test PASSED on pre3 (Calculator host: top-left frame [24,24], top center frame [141,24][939,68] = centered on 1080, middle+center vertical [466,805][613,1011], drag +150/+150 saved x/y 150 and frame moved 150; Android Settings hides app overlays = bad host). Friend pre3: GPU % works (24 %, report 18.7 % via gpubusy), GPU temp present; 'GPU —' = blocked GPU MHz, confusing -> label '— MHz'. FPS 0 in No Man's Sky on the Honor -> ROOT CAUSE: Android 16+ `dumpsys SurfaceFlinger --list` wraps names as RequestedLayerState{<name> parentId=…}; frames are on the unhashed 'pkg/Activity#N' buffer layer (Elite scroll test: 126 rows, 144 Hz), the hashed container shows zeros. Fix ca15e479 (sfLayerName + prefer unhashed layer, test with real Elite list) + MHz label; CI 44948207626. Elite restored after test (HUD off, apps {}, pos 0, per-app off, appop default). NEXT: stable 2.2.1 (user said "make a new stable").
 - **v2.2.1-pre3 PRE-RELEASE (11-21 15:38:03 EST)** on feat/hud-auto-overlay: tag -> e67dedca (== built, run 44946754352), asset BatteryLog-v2.2.1-pre3-e67dedca.apk sha256 e25bc83e… (== .sha256, signer a40da80a), not Latest. INSTALLED FIT + Elite 15:39 EST (user: "yes publish pre3 when green and install on both"; vc 14, no crash). Adds HUD 3x3 position + Horizontal/Vertical (436e77ac) + idle gpubusy = 0 % (007a9b42). USER 15:4x: "make a new stable" -> NEXT: Elite HUD position test, then merge to main + v2.2.1 stable. User decision 15:4x: keep package name (no com.batterylog). Repo description set.
 - **v2.2.1-pre2 PRE-RELEASE (11-21 15:13:36 EST)** on feat/hud-auto-overlay: tag -> c3ca9cb47041a16d99ae649e017e93ff14e52e7f (== built, run 44944684330), asset BatteryLog-v2.2.1-pre2-c3ca9cb4.apk sha256 4dbd785f… (== .sha256, signer a40da80a), not Latest (Latest = v2.2.0). INSTALLED FIT + Elite 15:14 EST (user: "yes publish pre2 when green and install on both"; vc 13 / 2.2.1-pre2, sha 4dbd785f, no crash). Contains auto overlay + sensor report + Honor fixes. Honor fixes NOT tested on an Honor yet. v2.2.1-pre1 (15:03, tag 1f9c445f) superseded. Branch not merged.
@@ -15,6 +16,14 @@ Newest entry first. Times are US Eastern.
 
 ## Lessons learned (don't repeat these)
 - (none yet)
+
+## 2026-11-21 — v2.2.1 stable release (feat/hud-auto-overlay -> main, IN PROGRESS)
+- User: "make a new stable" (~15:4x EST), then "yes install on elite and test, then make stable".
+- Elite test of 0d0747ee (CI 44948404261 green, sha dd237ad4, installed on the Elite only 15:58 EST): HUD over Calculator, swipes -> FPS 125 / 124 while moving, 2 after (Android 16 FPS fix DEVICE-PROVEN, window-layer path); wrap fix visible (one line, no split); auto overlay granted again; Elite restored (apps {}, HUD off, per-app off, appop default), no crash. SurfaceView path covered by unit test with Elite list format, not on a device.
+- Friend pre3 (screenshots 15:44-15:49): GPU % works on the Honor, GPU temp present; 'GPU —' was MHz -> label fixed; HUD drag works in DroidDeck, not over Discord (likely sits under the status bar there, which takes touches first; Position resets it).
+- main fast-forward 0d0747ee + release commit 7baeae24 (vc 15 / 2.2.1, release-notes/v2.2.1.md, README: sensor report, units, HUD position/layout, overlay permission).
+- BatteryLog submitted to Orion by the Orion session (Orion-Data #3214); stable releases are picked up automatically.
+- Next: push main, dispatch release=true tag=v2.2.1 prerelease=false, verify; install on devices needs user yes.
 
 ## 2026-11-21 — HUD: allow the overlay through root or Shizuku (`feat/hud-auto-overlay`, IN PROGRESS)
 **Why:** user's friend on an Honor Magic 8 Pro (BatteryLog installed from the APK) found "display over other apps" blocked as a restricted setting (Android 15+ restricts it for apps installed from a file; fix by hand = App info → ⋮ → Allow restricted settings). User: "yes add the auto overlay permissionz".
