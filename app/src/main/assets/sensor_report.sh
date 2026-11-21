@@ -14,6 +14,10 @@ echo "== kgsl-3d0"
 for f in gpu_busy_percentage gpubusy gpuclk clock_mhz max_gpuclk gpu_model devfreq/cur_freq devfreq/gpu_load; do
   echo "$f: $(head -c 200 /sys/class/kgsl/kgsl-3d0/$f 2>&1 | head -1)"
 done
+echo "== kgsl-3d0 all files"
+for f in /sys/class/kgsl/kgsl-3d0/*; do
+  if [ -f "$f" ]; then echo "${f##*/}: $(head -c 120 $f 2>&1 | head -1)"; fi
+done
 echo "== /sys/kernel/gpu"
 for f in /sys/kernel/gpu/*; do
   if [ -f "$f" ]; then echo "${f##*/}: $(head -c 200 $f 2>&1 | head -1)"; fi

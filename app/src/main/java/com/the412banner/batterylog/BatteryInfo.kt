@@ -51,9 +51,11 @@ data class BatteryInfo(
                 val scale = s?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
                 cap = if (level >= 0 && scale > 0) level * 100 / scale else -1
             }
-            var now = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
+            val counter = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER)
+            val milli = BatteryUnits.isMilli(counter, cap)
+            var now = BatteryUnits.currentUa(bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW), milli)
                 .let { if (it == Int.MIN_VALUE || it == 0) Double.NaN else it / 1000.0 }
-            var avg = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_AVERAGE)
+            var avg = BatteryUnits.currentUa(bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_AVERAGE), milli)
                 .let { if (it == Int.MIN_VALUE || it == 0) Double.NaN else it / 1000.0 }
             if (status == BatteryManager.BATTERY_STATUS_DISCHARGING && !now.isNaN() && flipSign == null) {
                 flipSign = now > 0
@@ -70,7 +72,7 @@ data class BatteryInfo(
                 tempDeci = s?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE) ?: Int.MIN_VALUE,
                 currentMa = now,
                 avgCurrentMa = avg,
-                chargeNowMah = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER).let { if (it > 0) it / 1000 else -1 },
+                chargeNowMah = BatteryUnits.chargeUah(counter, milli).let { if (it > 0) it / 1000 else -1 },
             )
         }
 

@@ -88,13 +88,23 @@ object SensorReport {
             appendLine("$g: $v")
         }
         val kgsl = section(raw, "kgsl-3d0").associate { it.substringBefore(":") to it.substringAfter(": ", "") }
-        appendLine("gpu busy: ${kgsl["gpu_busy_percentage"]?.takeIf { it.isNotBlank() } ?: "none"}")
-        appendLine("gpu clock: ${kgsl["gpuclk"]?.takeIf { it.isNotBlank() } ?: "none"}")
+        val busyPct = kgsl["gpu_busy_percentage"]?.trim()?.removeSuffix("%")?.trim()?.toFloatOrNull()
+        val busyRaw = AppParse.kgslGpuBusy(kgsl["gpubusy"])
+        appendLine("gpu busy: " + when {
+            busyPct != null -> "%.0f %% (gpu_busy_percentage)".format(Locale.US, busyPct)
+            busyRaw != null -> "%.1f %% (gpubusy)".format(Locale.US, busyRaw)
+            else -> "none"
+        })
+        val clk = kgsl["gpuclk"]?.trim()?.toLongOrNull()
+        appendLine("gpu clock: " + (clk?.let { "${it / 1_000_000} MHz (gpuclk)" } ?: "none"))
     }
 
     private fun battery(ctx: Context): String = buildString {
         val bm = ctx.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
         val s = runCatching { ctx.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED)) }.getOrNull()
+        val counter = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER)
+        val cap = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+        appendLine("units: " + if (com.the412banner.batterylog.BatteryUnits.isMilli(counter, cap)) "mA / mAh (BatteryLog converts)" else "µA / µAh")
         appendLine("CURRENT_NOW=${bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)}")
         appendLine("CURRENT_AVERAGE=${bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_AVERAGE)}")
         appendLine("CHARGE_COUNTER=${bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER)}")

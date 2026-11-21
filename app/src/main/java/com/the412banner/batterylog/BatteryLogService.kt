@@ -239,8 +239,11 @@ class BatteryLogService : Service() {
         val pluggedInt = sticky?.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1) ?: -1
         val healthInt = sticky?.getIntExtra(BatteryManager.EXTRA_HEALTH, -1) ?: -1
         val capacity = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
-        val currentUa = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
-        val chargeUah = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER)
+        // Logs stay in µA / µAh even on phones that report mA / mAh.
+        val counterRaw = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER)
+        val milli = BatteryUnits.isMilli(counterRaw, capacity)
+        val currentUa = BatteryUnits.currentUa(bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW), milli)
+        val chargeUah = BatteryUnits.chargeUah(counterRaw, milli)
         val energyNwh = bm.getLongProperty(BatteryManager.BATTERY_PROPERTY_ENERGY_COUNTER)
 
         val iso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date(now))

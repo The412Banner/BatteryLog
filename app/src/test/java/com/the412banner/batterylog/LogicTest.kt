@@ -178,7 +178,8 @@ class LogicTest {
             Current cooling devices from HAL:
             == kgsl-3d0
             gpu_busy_percentage: head: /sys/class/kgsl/kgsl-3d0/gpu_busy_percentage: Permission denied
-            gpuclk: 
+            gpubusy:  116299 1004827
+            gpuclk: head: /sys/class/kgsl/kgsl-3d0/gpuclk: Permission denied
             == end
         """.trimIndent()
         val r = com.the412banner.batterylog.apps.SensorReport.interpret(raw)
@@ -187,8 +188,29 @@ class LogicTest {
         assertTrue(r, r.contains("skin: 25.0 °C from Android's thermal list"))
         assertTrue(r, r.contains("battery: 31.0 °C from thermal_zone2 (battery)"))
         assertTrue(r, r.contains("ddr: none"))
-        assertTrue(r, r.contains("gpu busy: head: /sys/class/kgsl/kgsl-3d0/gpu_busy_percentage: Permission denied"))
+        assertTrue(r, r.contains("gpu busy: 11.6 % (gpubusy)"))
         assertTrue(r, r.contains("gpu clock: none"))
+    }
+
+    @Test
+    fun honorReadings() {
+        val g = com.the412banner.batterylog.apps.AppParse
+        // Trip points report their limit, not a temperature.
+        assertNull(g.thermalGroup("cpu-hw-trip-0"))
+        assertEquals("cpu", g.thermalGroup("cpullc-0-0"))
+        assertEquals("cpu", g.thermalGroup("cpu-1-0-0"))
+        assertEquals(11.57f, g.kgslGpuBusy("  116299 1004827\n")!!, 0.01f)
+        assertNull(g.kgslGpuBusy("head: Permission denied"))
+        assertNull(g.kgslGpuBusy("5 0"))
+        // Honor: CURRENT_NOW -294 (mA), CHARGE_COUNTER 5290 (mAh) at 91 %; the Elite reports µA / µAh.
+        assertTrue(BatteryUnits.isMilli(5290, 91))
+        assertEquals(-294_000, BatteryUnits.currentUa(-294, true))
+        assertEquals(5_290_000, BatteryUnits.chargeUah(5290, true))
+        assertTrue(!BatteryUnits.isMilli(2_272_681, 25))
+        assertTrue(!BatteryUnits.isMilli(50_000, 1))   // 1 % of a 5000 mAh battery in µAh
+        assertTrue(!BatteryUnits.isMilli(0, 50))
+        assertEquals(-1_345_255, BatteryUnits.currentUa(-1_345_255, false))
+        assertEquals(Int.MIN_VALUE, BatteryUnits.currentUa(Int.MIN_VALUE, true))
     }
 
     @Test

@@ -81,6 +81,8 @@ object AppParse {
     fun thermalGroup(type: String): String? {
         val t = type.lowercase()
         return when {
+            // Trip points such as cpu-hw-trip-0 report their limit (e.g. 105 °C), not a temperature.
+            t.contains("trip") -> null
             t.startsWith("cpu") || t.startsWith("cpuss") || t.contains("cpu-") -> "cpu"
             t.startsWith("gpu") || t.contains("gpuss") -> "gpu"
             t.contains("skin") || t.contains("quiet") || t == "xo-therm" || t.contains("sys-therm") -> "skin"
@@ -149,6 +151,13 @@ object AppParse {
     }
 
     /** Thermal readings in millidegrees (or degrees on some kernels) -> °C, NaN when not plausible. */
+    /** kgsl `gpubusy` ("busy total" of the last window) -> GPU load %; null when unreadable. */
+    fun kgslGpuBusy(text: String?): Float? {
+        val n = text?.trim()?.split(Regex("\\s+"))?.mapNotNull { it.toLongOrNull() } ?: return null
+        if (n.size < 2 || n[1] <= 0) return null
+        return (n[0] * 100f / n[1]).coerceIn(0f, 100f)
+    }
+
     fun milliC(raw: String?): Float {
         val v = raw?.trim()?.toFloatOrNull() ?: return Float.NaN
         val c = if (kotlin.math.abs(v) > 1000f) v / 1000f else v

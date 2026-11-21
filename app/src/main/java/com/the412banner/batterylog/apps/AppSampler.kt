@@ -41,6 +41,7 @@ class AppSampler(private val ctx: Context) {
         echo @PS; ps -A -o PID,UID,RSS,TIME+,NAME
         echo @STAT; head -1 /proc/stat
         echo @GPUBUSY; cat /sys/class/kgsl/kgsl-3d0/gpu_busy_percentage 2>/dev/null
+        echo @GPUBUSYRAW; cat /sys/class/kgsl/kgsl-3d0/gpubusy 2>/dev/null
         echo @GPUCLK; cat /sys/class/kgsl/kgsl-3d0/gpuclk 2>/dev/null
         echo @GPUMEM; grep -H . /sys/class/kgsl/kgsl/proc/*/kernel 2>/dev/null
         echo @TEMP; grep -H . /sys/class/thermal/thermal_zone*/temp 2>/dev/null
@@ -129,7 +130,9 @@ class AppSampler(private val ctx: Context) {
         prevStat = stat
 
         // GPU.
-        val gpuPct = sec["GPUBUSY"]?.trim()?.removeSuffix("%")?.trim()?.toFloatOrNull() ?: Float.NaN
+        // Some phones (Honor) block gpu_busy_percentage but leave gpubusy readable.
+        val gpuPct = sec["GPUBUSY"]?.trim()?.removeSuffix("%")?.trim()?.toFloatOrNull()
+            ?: AppParse.kgslGpuBusy(sec["GPUBUSYRAW"]) ?: Float.NaN
         val gpuMhz = sec["GPUCLK"]?.trim()?.toLongOrNull()?.let { it / 1_000_000f } ?: Float.NaN
         val gpuMem = AppParse.grepH(sec["GPUMEM"].orEmpty()).mapNotNull { (pid, v) ->
             pid.toIntOrNull()?.let { p -> v.toLongOrNull()?.let { p to it / 1024 } }
