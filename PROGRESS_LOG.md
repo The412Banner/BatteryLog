@@ -3,7 +3,7 @@
 Newest entry first. Times are US Eastern.
 
 ## Resume point
-- **v2.2.0 STABLE = Latest** (11-21 13:40:49 EST, tag -> c0466f804458edaf202830e82bbe89ece80a1a6c = release run 44936374758 headSha; HUD overlay + game picker + Shizuku mode). Asset BatteryLog-v2.2.0-c0466f80.apk 3,669,815 B sha256 da20a49d… (= .sha256, AOSP testkey a40da80a). FIT + Elite run 42d83a41 (same app code, says 2.1.0) -> updater should offer 2.2.0 (not tried). HUD in a game and Shizuku mode NOT device-tested.
+- **v2.2.0 STABLE = Latest** (11-21 13:40:49 EST, tag -> c0466f804458edaf202830e82bbe89ece80a1a6c = release run 44936374758 headSha; HUD overlay + game picker + Shizuku mode). Asset BatteryLog-v2.2.0-c0466f80.apk 3,669,815 B sha256 da20a49d… (= .sha256, AOSP testkey a40da80a). FIT + Elite INSTALLED the release APK 14:14 EST (user yes; pm install -r, base.apk sha da20a49d = asset, vc 11 / 2.2.0, no crash). HUD in a game and Shizuku mode NOT device-tested.
 - **feat/hud-overlay (11-21):** 42d83a41 ("Add a game" picker, CI 44873722932 green) INSTALLED FIT + Elite 13:20 EST (user: "yes install it on both"; base.apk sha 082b44fb on both, no crash). HUD not tried in a game yet. Shizuku mode not tried (Shizuku not on FIT/Elite).
 - **v2.1.0 STABLE = Latest** (11-20 08:55 EST, tag -> d72fd40e = release run 44747786224; per-app monitoring). Pocket FIT runs 208cc13b (same code, versionName 2.0.0) -> its updater should offer 2.1.0 (not yet tried).
 - **v2.0.0 STABLE = Latest** (published 2026-11-16 19:30:20 EST, tag → 21cc13320fa02bdbbd69157d269441b4e2e86a16 = release run 43987268286 headSha); assets BatteryLog-v2.0.0-21cc1332.apk (sha256 b7917a08…, = .sha256, AOSP testkey a40da80a, vc 9) + .sha256; notes = release-notes/v2.0.0.md. main = 21cc1332 (+ log commits); backup refs/backup/20261116/main-before-redesign-2.0 = 0b7367d2.
@@ -19,7 +19,8 @@ Newest entry first. Times are US Eastern.
 - Release commit df08da91: versionCode 11 / 2.2.0, release-notes/v2.2.0.md, README (Root line, Shizuku paragraph, HUD section, Credits: Shizuku-API RikkaApps Apache-2.0).
 - Pushed main c0466f80 (log commit on top of df08da91). Release run 44936374758 (workflow_dispatch release=true tag=v2.2.0 prerelease=false, headSha c0466f80 == pushed): all steps green (logic tests, build, v1+v2+v3 sign, screenshots, publish). Push build 44936354996 ran on the same commit.
 - Verified: v2.2.0 Latest, not draft/prerelease, tag -> c0466f804458edaf202830e82bbe89ece80a1a6c (== built commit); assets BatteryLog-v2.2.0-c0466f80.apk 3,669,815 B sha256 da20a49d52ea1d1a44c1ead748a0dac4b55cc6add9d7c07052cb0f037d7ebcca (downloaded, == .sha256) + .sha256; signer a40da80a (same key as all releases); release body == release-notes/v2.2.0.md; unauthenticated releases/latest = v2.2.0 (what the updater reads).
-- Not done: device update to 2.2.0 (needs user yes); HUD game test; Shizuku test; branches feat/shizuku-mode, feat/hud-overlay, rel/v2.2.0 (local) kept (ask before deleting).
+- Install 14:14 EST (user: "yes install 2.2.0 on both"): release APK staged in /sdcard/Download on FIT + Elite (sha da20a49d host == FIT == Elite), pm install -r on both; installed base.apk sha da20a49d, versionCode 11 / 2.2.0, crash buffer empty, no FATAL; FIT 2 services up (battery + per-app), Elite battery service up (per-app off there).
+- Not done: HUD game test; Shizuku test; branches feat/shizuku-mode, feat/hud-overlay, rel/v2.2.0 (local) kept (ask before deleting).
 
 ## 2026-11-21 — HUD overlay over games (`feat/hud-overlay`, stacked on `feat/shizuku-mode`, IN PROGRESS)
 **Why:** user: "add a simple customizable hud overlay for apps to display metrics toggled on/off for specific games ... so it stays visible". Plan given in chat (overlay permission, metric list, per-game auto show, position/size/opacity).
