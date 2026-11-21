@@ -7,7 +7,8 @@ It started as a tool to chase random shut-offs on the AYANEO Pocket FIT and work
 - **Package:** `com.the412banner.batterylog.debug` (kept from the first releases so updates install over them)
 - **UI:** Kotlin, Jetpack Compose, Material 3 (light, dark, black, optional wallpaper colours)
 - **Android:** 10 (API 29) or newer, target API 36
-- **Root:** not needed for logging, charts and reports. Needed for the boot logger, charge control and per-app monitoring.
+- **Root:** not needed for logging, charts and reports. Needed for the boot logger and charge control. Per-app
+  monitoring and the HUD work with root or, without root, through [Shizuku](https://shizuku.rikka.app/).
 
 ## Screens
 
@@ -85,7 +86,7 @@ logger at every boot that writes the same CSV columns, so logs cover the minutes
 if the app never opened. Where the app is also logging, the app's rows are used and the boot logger's
 rows for the same time are skipped.
 
-## Per-app monitoring (root, optional)
+## Per-app monitoring (root or Shizuku, optional)
 
 **Settings → Per-app monitoring** records, every 2–30 s, the app on screen, the device's power, CPU and GPU load,
 GPU clock and temperatures (CPU, GPU, skin, memory, battery), plus each app's CPU time, RAM and GPU memory.
@@ -98,6 +99,20 @@ GPU clock and temperatures (CPU, GPU, skin, memory, battery), plus each app's CP
 Watts per app = the whole device's power while that app is on screen (Android does not measure one app on its
 own); GPU load is device-wide and credited to the app on screen. CPU time, RAM and GPU memory are per app.
 Files: `/sdcard/BatteryLog/apps/timeline-<day>.csv` and `apps-<day>.csv`.
+
+Root is used when the device has it; otherwise Shizuku (start Shizuku, then tap **Allow Shizuku** in the Apps tab).
+**Use Shizuku instead of root** forces Shizuku. Where the sensor files are hidden, temperatures come from
+Android's thermal service (`dumpsys thermalservice`).
+
+## HUD overlay (root or Shizuku, optional)
+
+**Settings → HUD overlay** shows live numbers on top of the games you pick, only while that game is on screen:
+FPS, CPU %, GPU %, GPU MHz, CPU / GPU / case / battery temperature, battery %, watts and clock, chosen per game.
+
+- **Games → Add a game**: installed apps, games first, with search. Or use the **HUD** card on an app's page.
+- Corner, size, background strength, one line; drag it while **Lock position** is off, touches pass through when on.
+- Refreshes every second while shown. FPS is read from SurfaceFlinger (frames the game presented in the last second).
+- Needs **Display over other apps** and per-app monitoring.
 
 ## Storage
 
@@ -143,6 +158,10 @@ Security and privacy.
 GitHub Actions builds on every push (`./gradlew :app:assembleRelease`, JDK 17), signs with the AOSP test key
 using `apksigner` (v1 + v2 + v3), runs the unit tests, and renders every screen with sample data into the
 `screenshots` artifact (Robolectric + Roborazzi). No local Android SDK needed.
+
+## Credits
+
+- [Shizuku-API](https://github.com/RikkaApps/Shizuku-API) by RikkaApps (Apache License 2.0), used for the no-root mode.
 
 ## License
 
