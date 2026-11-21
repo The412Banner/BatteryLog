@@ -143,3 +143,7 @@ Security and privacy.
 GitHub Actions builds on every push (`./gradlew :app:assembleRelease`, JDK 17), signs with the AOSP test key
 using `apksigner` (v1 + v2 + v3), runs the unit tests, and renders every screen with sample data into the
 `screenshots` artifact (Robolectric + Roborazzi). No local Android SDK needed.
+
+## License
+
+BatteryLog is licensed under the GNU General Public License v3.0 (see [LICENSE](LICENSE)).
