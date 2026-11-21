@@ -3,6 +3,7 @@
 Newest entry first. Times are US Eastern.
 
 ## Resume point
+- **feat/shizuku-mode IN PROGRESS (11-21 ~00:2x EST):** per-app monitoring without root through Shizuku (user: Fold 8 Ultra, no root). 495fb96f + 7a416455 pushed; CI 44869980617 (495fb96f) running. NOT device-tested. Next: CI green → stage APK; Shizuku app is not on the FIT/Elite (ask before installing it). HUD overlay asked next (separate branch, plan given).
 - **v2.1.0 STABLE = Latest** (11-20 08:55 EST, tag -> d72fd40e = release run 44747786224; per-app monitoring). Pocket FIT runs 208cc13b (same code, versionName 2.0.0) -> its updater should offer 2.1.0 (not yet tried).
 - **v2.0.0 STABLE = Latest** (published 2026-11-16 19:30:20 EST, tag → 21cc13320fa02bdbbd69157d269441b4e2e86a16 = release run 43987268286 headSha); assets BatteryLog-v2.0.0-21cc1332.apk (sha256 b7917a08…, = .sha256, AOSP testkey a40da80a, vc 9) + .sha256; notes = release-notes/v2.0.0.md. main = 21cc1332 (+ log commits); backup refs/backup/20261116/main-before-redesign-2.0 = 0b7367d2.
 - **In-app updater DEVICE-PROVEN on the Elite (11-16 19:32 EST):** 1611739d (1.6.0) → v2.0.0 via Settings → Updates: found the release, downloaded, SHA-256 verified, installed. Installed base.apk sha256 b7917a08… = release asset, vc 9 / 2.0.0, installer of record = BatteryLog itself; crash buffer empty. Elite runs v2.0.0. Rollback APKs: /sdcard/Download/BatteryLog-backup-20261116/.
@@ -10,6 +11,12 @@ Newest entry first. Times are US Eastern.
 
 ## Lessons learned (don't repeat these)
 - (none yet)
+
+## 2026-11-21 — Per-app monitoring through Shizuku, no root (`feat/shizuku-mode`, IN PROGRESS)
+**Why:** user asked whether BatteryLog can read the case (skin) temperature on a Galaxy Fold 8 Ultra without root. Checked main 48aa3aa: the battery log reads only battery temp (BatteryLogService.kt:237); CPU/GPU/case temps come from the per-app monitor, which needs a root shell (apps/AppSampler.kt:27-29, "Root access is needed" AppMonitorService.kt:81). User: "yes add the shizuku mode to batterylog".
+**Change:** `PrivShell` interface; `RootShell` implements it; new `ShizukuShell` = Shizuku user service (`ShellUserService`, AIDL `IShellService`) that runs scripts with `sh` in Shizuku's process (shell uid via Wireless debugging, root uid in root mode). `AppSampler` picks root first, then Shizuku (or only Shizuku with the new setting "Use Shizuku instead of root"); drops and re-picks the shell after a failure. Temperatures: when the sensor files give no CPU/GPU/case value (Samsung hides them from shell), they come from `dumpsys thermalservice` ("Current temperatures from HAL", types 0 CPU / 1 GPU / 2 battery / 3 skin; `AppParse.halTemps`, unit test). Usage access (`appops set … GET_USAGE_STATS allow`) goes through the same shell. Apps tab: "Recording every N s · Shizuku/root", error "Needs root or Shizuku", button "Allow Shizuku" when Shizuku runs but BatteryLog isn't allowed. Settings subtitle "Needs root or Shizuku". Manifest: `rikka.shizuku.ShizukuProvider`. ProGuard keeps the user service. Library: Shizuku-API 13.1.5 (RikkaApps, Apache-2.0).
+**Commits:** 495fb96f (Shizuku mode), 7a416455 (setting). **CI:** 44869980617 (495fb96f) running.
+**Not tested:** everything on a device; what a shell-uid Shizuku may read on Samsung (ps/proc, kgsl, thermal files) — dumpsys paths should work (shell has DUMP).
 
 ## 2026-11-20 — v2.1.0 stable release (feat/per-app-monitor -> main)
 - User: "release a new stable" (08:4x EST, after per-app monitoring was installed and used on the Pocket FIT).
