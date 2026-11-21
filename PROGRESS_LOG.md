@@ -3,7 +3,7 @@
 Newest entry first. Times are US Eastern.
 
 ## Resume point
-- **feat/hud-overlay (11-21):** febb7028 INSTALLED FIT + Elite 00:31 EST (user OK; sha e931b193, no crash); 42d83a41 = "Add a game" picker (user: "yes add the add a game picker"), CI 44873722932 running; install of the picker build needs the user's yes. HUD not tried in a game yet.
+- **feat/hud-overlay (11-21):** 42d83a41 ("Add a game" picker, CI 44873722932 green) INSTALLED FIT + Elite 13:20 EST (user: "yes install it on both"; base.apk sha 082b44fb on both, no crash). HUD not tried in a game yet. Shizuku mode not tried (Shizuku not on FIT/Elite).
 - **v2.1.0 STABLE = Latest** (11-20 08:55 EST, tag -> d72fd40e = release run 44747786224; per-app monitoring). Pocket FIT runs 208cc13b (same code, versionName 2.0.0) -> its updater should offer 2.1.0 (not yet tried).
 - **v2.0.0 STABLE = Latest** (published 2026-11-16 19:30:20 EST, tag → 21cc13320fa02bdbbd69157d269441b4e2e86a16 = release run 43987268286 headSha); assets BatteryLog-v2.0.0-21cc1332.apk (sha256 b7917a08…, = .sha256, AOSP testkey a40da80a, vc 9) + .sha256; notes = release-notes/v2.0.0.md. main = 21cc1332 (+ log commits); backup refs/backup/20261116/main-before-redesign-2.0 = 0b7367d2.
 - **In-app updater DEVICE-PROVEN on the Elite (11-16 19:32 EST):** 1611739d (1.6.0) → v2.0.0 via Settings → Updates: found the release, downloaded, SHA-256 verified, installed. Installed base.apk sha256 b7917a08… = release asset, vc 9 / 2.0.0, installer of record = BatteryLog itself; crash buffer empty. Elite runs v2.0.0. Rollback APKs: /sdcard/Download/BatteryLog-backup-20261116/.
@@ -18,7 +18,8 @@ Newest entry first. Times are US Eastern.
 **Checked live before writing:** FIT `dumpsys SurfaceFlinger --list` names + `--latency "<window layer>"` = refresh period line + 128 rows (zeros when idle).
 **Not tested:** everything on a device; FPS on a real game layer; Samsung shell access to SurfaceFlinger (shell has DUMP).
 **Install 00:31 EST:** febb7028 (CI 44870962353 green) on FIT + Elite via pm install -r; installed base.apk sha e931b193 on both; crash buffer 0 BatteryLog lines; app running.
-**Picker (42d83a41):** Settings HUD card lists HUD games (tap → metric chips, ✕ remove) + "Add a game" dialog (launcher apps via queryIntentActivities, search, games first by ApplicationInfo.CATEGORY_GAME / FLAG_IS_GAME); chips shared (ui/hud/HudUi.kt). CI 44873722932 running.
+**Picker (42d83a41):** Settings HUD card lists HUD games (tap → metric chips, ✕ remove) + "Add a game" dialog (launcher apps via queryIntentActivities, search, games first by ApplicationInfo.CATEGORY_GAME / FLAG_IS_GAME); chips shared (ui/hud/HudUi.kt). CI 44873722932 green.
+**Install 13:20 EST:** 42d83a41 on FIT + Elite via pm install -r (user: "yes install it on both"); staged sha 082b44fb checked on both first; installed base.apk sha 082b44fb on both; crash buffer empty, no FATAL; FIT: both services back (per-app on), Elite: battery log service back (per-app off there, as before). Rollback = febb7028 APK in Download or v2.1.0 release.
 
 ## 2026-11-21 — Per-app monitoring through Shizuku, no root (`feat/shizuku-mode`, IN PROGRESS)
 **Why:** user asked whether BatteryLog can read the case (skin) temperature on a Galaxy Fold 8 Ultra without root. Checked main 48aa3aa: the battery log reads only battery temp (BatteryLogService.kt:237); CPU/GPU/case temps come from the per-app monitor, which needs a root shell (apps/AppSampler.kt:27-29, "Root access is needed" AppMonitorService.kt:81). User: "yes add the shizuku mode to batterylog".
