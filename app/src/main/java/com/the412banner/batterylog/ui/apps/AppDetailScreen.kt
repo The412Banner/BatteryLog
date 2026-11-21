@@ -364,7 +364,6 @@ private fun AllMetrics(pkg: String, d: Detail, unit: TempUnit) {
 }
 
 /** Per-app HUD switch + which metrics it shows in this app. */
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun HudCard(pkg: String) {
     val hud by com.the412banner.batterylog.hud.HudStore.flow.collectAsStateWithLifecycle()
@@ -388,25 +387,6 @@ private fun HudCard(pkg: String) {
             })
         },
     ) {
-        if (metrics != null) {
-            androidx.compose.foundation.layout.FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                com.the412banner.batterylog.hud.HudMetric.entries.forEach { m ->
-                    FilterChip(
-                        selected = m in metrics,
-                        onClick = {
-                            com.the412banner.batterylog.hud.HudStore.update { c ->
-                                val cur = c.apps[pkg] ?: return@update c
-                                val next = if (m in cur) cur - m else cur + m
-                                c.copy(apps = c.apps + (pkg to next))
-                            }
-                        },
-                        label = { Text(m.label) },
-                    )
-                }
-            }
-        }
+        if (metrics != null) com.the412banner.batterylog.ui.hud.HudMetricChips(pkg)
     }
 }

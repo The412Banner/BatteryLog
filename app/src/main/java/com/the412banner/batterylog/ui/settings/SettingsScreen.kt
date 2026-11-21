@@ -258,7 +258,7 @@ private fun HudSettingsCard() {
     }
     SectionCard(
         "HUD overlay", Icons.Rounded.Tune, tint = c.temp,
-        subtitle = if (hud.apps.isEmpty()) "Turn it on per game in Apps" else "On for ${hud.apps.size} app" + if (hud.apps.size == 1) "" else "s",
+        subtitle = if (hud.apps.isEmpty()) "No games added" else "On for ${hud.apps.size} app" + if (hud.apps.size == 1) "" else "s",
     ) {
         SwitchRow("HUD overlay", hud.enabled) { v ->
             set { it.copy(enabled = v) }
@@ -284,6 +284,9 @@ private fun HudSettingsCard() {
                 IntSlider(hud.opacity, 0..100, 10) { v -> set { it.copy(opacity = v) } }
                 SwitchRow("One line", hud.oneLine) { v -> set { it.copy(oneLine = v) } }
                 SwitchRow("Lock position", hud.locked, sub = if (hud.locked) "Touches go through to the game" else "Drag the HUD to move it") { v -> set { it.copy(locked = v) } }
+                Spacer(Modifier.height(8.dp))
+                Label("Games")
+                com.the412banner.batterylog.ui.hud.HudAppsSection()
             }
         }
     }
