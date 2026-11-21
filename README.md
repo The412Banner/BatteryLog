@@ -104,15 +104,21 @@ Root is used when the device has it; otherwise Shizuku (start Shizuku, then tap 
 **Use Shizuku instead of root** forces Shizuku. Where the sensor files are hidden, temperatures come from
 Android's thermal service (`dumpsys thermalservice`).
 
+**Share sensor report** (same card) collects what the phone exposes (temperature sensors, Android's thermal list,
+GPU and battery files) and which sensor each reading comes from, and shares it as a text file. Phones that report
+battery current in mA / mAh instead of µA / µAh (Honor, for example) are detected and converted.
+
 ## HUD overlay (root or Shizuku, optional)
 
 **Settings → HUD overlay** shows live numbers on top of the games you pick, only while that game is on screen:
 FPS, CPU %, GPU %, GPU MHz, CPU / GPU / case / battery temperature, battery %, watts and clock, chosen per game.
 
 - **Games → Add a game**: installed apps, games first, with search. Or use the **HUD** card on an app's page.
-- Corner, size, background strength, one line; drag it while **Lock position** is off, touches pass through when on.
+- Position (Top / Middle / Bottom × Left / Center / Right), Horizontal or Vertical layout, size, background strength;
+  drag it while **Lock position** is off, touches pass through when on.
 - Refreshes every second while shown. FPS is read from SurfaceFlinger (frames the game presented in the last second).
-- Needs **Display over other apps** and per-app monitoring.
+- Needs **Display over other apps** and per-app monitoring. With root or Shizuku BatteryLog allows the overlay itself
+  (also where Android marks it as a restricted setting); otherwise Android's settings page opens.
 
 ## Storage
 
