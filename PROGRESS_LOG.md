@@ -3,7 +3,7 @@
 Newest entry first. Times are US Eastern.
 
 ## Resume point
-- **feat/shizuku-mode IN PROGRESS (11-21 ~00:2x EST):** per-app monitoring without root through Shizuku (user: Fold 8 Ultra, no root). 495fb96f + 7a416455 pushed; CI 44869980617 (495fb96f) running. NOT device-tested. Next: CI green → stage APK; Shizuku app is not on the FIT/Elite (ask before installing it). HUD overlay asked next (separate branch, plan given).
+- **feat/hud-overlay IN PROGRESS (11-21 ~00:5x EST)** (stacked on feat/shizuku-mode): HUD overlay febb7028, CI 44870962353 running. Shizuku build 7a416455 CI 44870070204 GREEN, APK staged /sdcard/Download/BatteryLog-shizuku-mode-7a416455.apk sha256 89327f92… (signer a40da80a), install awaits user yes. NOT device-tested.
 - **v2.1.0 STABLE = Latest** (11-20 08:55 EST, tag -> d72fd40e = release run 44747786224; per-app monitoring). Pocket FIT runs 208cc13b (same code, versionName 2.0.0) -> its updater should offer 2.1.0 (not yet tried).
 - **v2.0.0 STABLE = Latest** (published 2026-11-16 19:30:20 EST, tag → 21cc13320fa02bdbbd69157d269441b4e2e86a16 = release run 43987268286 headSha); assets BatteryLog-v2.0.0-21cc1332.apk (sha256 b7917a08…, = .sha256, AOSP testkey a40da80a, vc 9) + .sha256; notes = release-notes/v2.0.0.md. main = 21cc1332 (+ log commits); backup refs/backup/20261116/main-before-redesign-2.0 = 0b7367d2.
 - **In-app updater DEVICE-PROVEN on the Elite (11-16 19:32 EST):** 1611739d (1.6.0) → v2.0.0 via Settings → Updates: found the release, downloaded, SHA-256 verified, installed. Installed base.apk sha256 b7917a08… = release asset, vc 9 / 2.0.0, installer of record = BatteryLog itself; crash buffer empty. Elite runs v2.0.0. Rollback APKs: /sdcard/Download/BatteryLog-backup-20261116/.
@@ -11,6 +11,12 @@ Newest entry first. Times are US Eastern.
 
 ## Lessons learned (don't repeat these)
 - (none yet)
+
+## 2026-11-21 — HUD overlay over games (`feat/hud-overlay`, stacked on `feat/shizuku-mode`, IN PROGRESS)
+**Why:** user: "add a simple customizable hud overlay for apps to display metrics toggled on/off for specific games ... so it stays visible". Plan given in chat (overlay permission, metric list, per-game auto show, position/size/opacity).
+**Change (febb7028):** `hud/HudConfig.kt` (HudMetric enum: FPS, CPU %, GPU %, GPU MHz, CPU/GPU/case/battery °, battery %, watts, clock; HudConfig: enabled, corner, x/y, size, opacity, oneLine, locked, apps map pkg → metrics; HudStore in prefs "hud" as JSON), `hud/HudText.kt` (pure parts + warm/hot levels, unit-tested), `hud/HudOverlay.kt` (TYPE_APPLICATION_OVERLAY TextView, rounded dark background, colours, drag when unlocked, FLAG_NOT_TOUCHABLE + alpha 0.8 when locked so touches pass through on Android 12+). FPS: `AppSampler.fps(pkg)` = `dumpsys SurfaceFlinger --list` → layer (SurfaceView BLAST first, else app window; `AppParse.sfLayerFor`) → `--latency` actual-present times → frames in the last second (`AppParse.sfFps`, 0 when static/stale), re-picks the layer after 10 s of nothing. `AppMonitorService.updateHud` after each tick: shows over the app on screen when it has HUD metrics; loop runs every 1 s while shown (recording too). UI: Settings card "HUD overlay" (switch turns on per-app monitoring + asks overlay permission; corner, size, background %, one line, lock position); app page in Apps: "HUD" card (switch + metric chips). Manifest SYSTEM_ALERT_WINDOW. Tests: surfaceFlingerLayerAndFps, hudTextParts.
+**Checked live before writing:** FIT `dumpsys SurfaceFlinger --list` names + `--latency "<window layer>"` = refresh period line + 128 rows (zeros when idle).
+**Not tested:** everything on a device; FPS on a real game layer; Samsung shell access to SurfaceFlinger (shell has DUMP).
 
 ## 2026-11-21 — Per-app monitoring through Shizuku, no root (`feat/shizuku-mode`, IN PROGRESS)
 **Why:** user asked whether BatteryLog can read the case (skin) temperature on a Galaxy Fold 8 Ultra without root. Checked main 48aa3aa: the battery log reads only battery temp (BatteryLogService.kt:237); CPU/GPU/case temps come from the per-app monitor, which needs a root shell (apps/AppSampler.kt:27-29, "Root access is needed" AppMonitorService.kt:81). User: "yes add the shizuku mode to batterylog".
