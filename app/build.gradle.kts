@@ -20,8 +20,8 @@ android {
         applicationId = "com.the412banner.batterylog.debug"
         minSdk = 29
         targetSdk = 36
-        versionCode = 12
-        versionName = "2.2.1-pre1"
+        versionCode = 13
+        versionName = "2.2.1-pre2"
         buildConfigField("String", "GIT_SHA", "\"$gitSha\"")
         buildConfigField("String", "UPDATE_REPO", "\"The412Banner/BatteryLog\"")
     }
