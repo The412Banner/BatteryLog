@@ -80,6 +80,27 @@ class AppSampler(private val ctx: Context) {
         return out
     }
 
+    private var fpsPkg = ""
+    private var fpsLayer: String? = null
+    private var fpsPicked = 0L
+
+    /** Frames per second of [pkg]'s window (SurfaceFlinger frame times); NaN when unknown. */
+    fun fps(pkg: String): Float {
+        if (pkg.isEmpty()) return Float.NaN
+        val now = System.currentTimeMillis()
+        if (pkg != fpsPkg || fpsLayer == null) {
+            fpsPkg = pkg
+            fpsLayer = run("dumpsys SurfaceFlinger --list 2>/dev/null")?.let { AppParse.sfLayerFor(it, pkg) }
+            fpsPicked = now
+        }
+        val layer = fpsLayer ?: return Float.NaN
+        val q = "'" + layer.replace("'", "'\\''") + "'"
+        val f = run("dumpsys SurfaceFlinger --latency $q 2>/dev/null")?.let { AppParse.sfFps(it, System.nanoTime()) }
+        // Layer gone, or still nothing after a while (the game may have opened its own surface): look again.
+        if (f == null || (f <= 0f && now - fpsPicked > 10_000)) fpsLayer = null
+        return f ?: Float.NaN
+    }
+
     /** Lets BatteryLog see which app is on screen (usage access), granted through the shell. */
     fun grantUsageAccess(pkg: String) { run("appops set $pkg GET_USAGE_STATS allow") }
 

@@ -37,6 +37,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -163,6 +164,8 @@ fun SettingsContent(settings: AppSettings, serviceActive: Boolean, updateAvailab
             }
         }
 
+        HudSettingsCard()
+
         SectionCard(
             "Updates", Icons.Rounded.SystemUpdate, tint = MaterialTheme.colorScheme.primary,
             onClick = actions.openUpdates,
@@ -230,4 +233,58 @@ private fun IntSlider(value: Int, range: IntRange, step: Int, onDone: (Int) -> U
         steps = steps,
         onValueChangeFinished = { onDone(kotlin.math.round(pos).toInt()) },
     )
+}
+
+@Composable
+private fun HudSettingsCard() {
+    val ctx = LocalContext.current
+    val app = BatteryLogApp.get(ctx)
+    val hud by com.the412banner.batterylog.hud.HudStore.flow.collectAsStateWithLifecycle()
+    var canDraw by remember { mutableStateOf(android.provider.Settings.canDrawOverlays(ctx)) }
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        canDraw = android.provider.Settings.canDrawOverlays(ctx)
+        onPauseOrDispose { }
+    }
+    val c = LocalChartColors.current
+    fun set(f: (com.the412banner.batterylog.hud.HudConfig) -> com.the412banner.batterylog.hud.HudConfig) =
+        com.the412banner.batterylog.hud.HudStore.update(f)
+    fun askOverlay() {
+        runCatching {
+            ctx.startActivity(
+                Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${ctx.packageName}"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        }
+    }
+    SectionCard(
+        "HUD overlay", Icons.Rounded.Tune, tint = c.temp,
+        subtitle = if (hud.apps.isEmpty()) "Turn it on per game in Apps" else "On for ${hud.apps.size} app" + if (hud.apps.size == 1) "" else "s",
+    ) {
+        SwitchRow("HUD overlay", hud.enabled) { v ->
+            set { it.copy(enabled = v) }
+            if (v) {
+                // The HUD rides on per-app monitoring (app on screen + sensors).
+                app.settings.update { it.copy(perApp = true) }
+                if (!canDraw) askOverlay()
+            }
+        }
+        AnimatedVisibility(hud.enabled) {
+            Column {
+                if (!canDraw) {
+                    FilledTonalButton(onClick = { askOverlay() }) { Text("Allow display over other apps") }
+                    Spacer(Modifier.height(6.dp))
+                }
+                Label("Corner")
+                Segmented(listOf("Top L", "Top R", "Bottom L", "Bottom R"), hud.corner) { i -> set { it.copy(corner = i, x = 24, y = 24) } }
+                Spacer(Modifier.height(8.dp))
+                Label("Size")
+                Segmented(listOf("Small", "Medium", "Large"), hud.size) { i -> set { it.copy(size = i) } }
+                Spacer(Modifier.height(8.dp))
+                Label("Background ${hud.opacity} %")
+                IntSlider(hud.opacity, 0..100, 10) { v -> set { it.copy(opacity = v) } }
+                SwitchRow("One line", hud.oneLine) { v -> set { it.copy(oneLine = v) } }
+                SwitchRow("Lock position", hud.locked, sub = if (hud.locked) "Touches go through to the game" else "Drag the HUD to move it") { v -> set { it.copy(locked = v) } }
+            }
+        }
+    }
 }

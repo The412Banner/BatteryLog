@@ -204,4 +204,49 @@ class LogicTest {
         val m = com.the412banner.batterylog.apps.MRow(60_000L, "com.x", 10226, 1200, 4000, 5000, 300, 30_000, 75_000.0, 6)
         assertEquals(m, com.the412banner.batterylog.apps.MRow.parse(m.csv()))
     }
+
+    @Test
+    fun surfaceFlingerLayerAndFps() {
+        val list = """
+            Task=1747#209296
+            ActivityRecord{7c7383f u0 com.tencent.ig/com.winlator.star.XServerDisplayActivity#209298
+            a503178 com.tencent.ig/com.winlator.star.XServerDisplayActivity#288890
+            SurfaceView[com.tencent.ig/com.winlator.star.XServerDisplayActivity]#288901
+            SurfaceView[com.tencent.ig/com.winlator.star.XServerDisplayActivity](BLAST)#288902
+            3ed49a com.termux/com.termux.app.TermuxActivity#212443
+        """.trimIndent()
+        val P = com.the412banner.batterylog.apps.AppParse
+        assertEquals("SurfaceView[com.tencent.ig/com.winlator.star.XServerDisplayActivity](BLAST)#288902", P.sfLayerFor(list, "com.tencent.ig"))
+        assertEquals("3ed49a com.termux/com.termux.app.TermuxActivity#212443", P.sfLayerFor(list, "com.termux"))
+        assertEquals(null, P.sfLayerFor(list, "com.example.none"))
+
+        // 61 frames 1/60 s apart -> 60 fps; table ends 0.1 s before "now".
+        val start = 5_000_000_000L
+        val step = 16_666_667L
+        val rows = (0..60).joinToString("\n") { i -> val t = start + i * step; "${t - 1000}\t$t\t${t - 2000}" }
+        val last = start + 60 * step
+        val fps = P.sfFps("16666666\n0\t0\t0\n$rows\n", last + 100_000_000L)!!
+        assertEquals(60f, fps, 0.5f)
+        assertEquals(0f, P.sfFps("6944444\n0\t0\t0\n0\t0\t0\n", 1L)!!, 0f)
+        assertEquals(0f, P.sfFps("16666666\n$rows\n", last + 3_000_000_000L)!!, 0f)
+        assertEquals(null, P.sfFps("", 1L))
+    }
+
+    @Test
+    fun hudTextParts() {
+        val v = com.the412banner.batterylog.hud.HudValues(
+            fps = 59.6f, cpuPct = 41f, gpuPct = 77f, gpuMhz = 1050f, cpuC = 101f, gpuC = 88f, caseC = 50f,
+            battC = 33f, battPct = 15, watts = -17.6, charging = false, time = 0L,
+        )
+        val all = com.the412banner.batterylog.hud.HudMetric.entries.toSet()
+        val parts = com.the412banner.batterylog.hud.HudText.parts(v, all, com.the412banner.batterylog.TempUnit.C)
+        assertEquals("FPS", parts[0].label); assertEquals("60", parts[0].value)
+        assertEquals(2, parts.first { it.value == "101°C" }.level)
+        assertEquals(1, parts.first { it.label == "Case" }.level)
+        assertEquals("17.6 W", parts.first { it.value.endsWith(" W") }.value)
+        assertEquals(1, parts.first { it.value == "15%" }.level)
+        val f = com.the412banner.batterylog.hud.HudText.parts(v, setOf(com.the412banner.batterylog.hud.HudMetric.CaseTemp), com.the412banner.batterylog.TempUnit.F)
+        assertEquals("122°F", f.single().value)
+        assertEquals("Case 122°F", com.the412banner.batterylog.hud.HudText.plain(f, true))
+    }
 }

@@ -14,6 +14,11 @@ import androidx.core.content.ContextCompat
 import com.the412banner.batterylog.BatteryLogApp
 import com.the412banner.batterylog.Notifier
 import com.the412banner.batterylog.ServiceNotification
+import com.the412banner.batterylog.hud.HudMetric
+import com.the412banner.batterylog.hud.HudOverlay
+import com.the412banner.batterylog.hud.HudStore
+import com.the412banner.batterylog.hud.HudText
+import com.the412banner.batterylog.hud.HudValues
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -32,6 +37,7 @@ import kotlinx.coroutines.launch
 class AppMonitorService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var sampler: AppSampler? = null
+    private var hud: HudOverlay? = null
     private var fgPkg = ""
     private var lastEventQuery = 0L
     private var minute = 0L
@@ -78,6 +84,7 @@ class AppMonitorService : Service() {
             if (!s.perApp) break
             val tick = sampler?.sample()
             if (tick == null) {
+                hud?.hide()
                 _access.value = null
                 _lastError.value = "Needs root or Shizuku"
                 ServiceNotification.refreshOrCancel(this)
@@ -89,14 +96,32 @@ class AppMonitorService : Service() {
             _lastError.value = null
             val fg = foreground()
             if (tick.dtMs > 0) record(tick, fg)
+            val hudShown = updateHud(tick, fg, s.tempUnit)
             val now = System.currentTimeMillis()
             if (now - lastNotify > 15_000) {
                 lastNotify = now
                 ServiceNotification.refreshOrCancel(this)
             }
-            delay(s.perAppSeconds.coerceIn(1, 60) * 1000L)
+            // While the HUD is on screen it (and the recording) refreshes every second.
+            delay(if (hudShown) 1000L else s.perAppSeconds.coerceIn(1, 60) * 1000L)
         }
         stopSelf()
+    }
+
+    /** Shows the HUD over [fg] when it has one; returns true while shown. */
+    private fun updateHud(t: DeviceTick, fg: String, unit: com.the412banner.batterylog.TempUnit): Boolean {
+        val cfg = HudStore.current()
+        val metrics = if (cfg.enabled && fg.isNotEmpty()) cfg.apps[fg] else null
+        val overlay = hud ?: HudOverlay(this).also { hud = it }
+        if (metrics.isNullOrEmpty() || !overlay.allowed()) { overlay.hide(); return false }
+        val fps = if (HudMetric.Fps in metrics) sampler?.fps(fg) ?: Float.NaN else Float.NaN
+        val v = HudValues(
+            fps = fps, cpuPct = t.cpuPct, gpuPct = t.gpuPct, gpuMhz = t.gpuMhz,
+            cpuC = t.cpuC, gpuC = t.gpuC, caseC = t.skinC, battC = t.battC,
+            battPct = t.level, watts = t.watts, charging = t.charging, time = t.time,
+        )
+        overlay.show(HudText.parts(v, metrics, unit), cfg)
+        return true
     }
 
     private fun record(t: DeviceTick, fg: String) {
@@ -156,6 +181,8 @@ class AppMonitorService : Service() {
         scope.cancel()
         sampler?.close()
         sampler = null
+        hud?.hide()
+        hud = null
         _access.value = null
         _running.value = false
         // Keep the shared notification if battery logging still runs; remove it otherwise.

@@ -119,6 +119,7 @@ fun AppDetailScreen(pkg: String, back: () -> Unit) {
             Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            HudCard(pkg)
             Choice(Period.entries.map { it.label }, period.ordinal) { period = Period.entries[it] }
             if (d == null) {
                 Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -357,6 +358,54 @@ private fun AllMetrics(pkg: String, d: Detail, unit: TempUnit) {
                     n(r.gpuPct, 6) + n(r.gpuMhz, 6) + n(tc(r.cpuC), 6) + n(tc(r.gpuC), 6) + n(tc(r.skinC), 6) +
                     n(tc(r.battC), 6) + n(r.fgRssKb / 1024f, 7) + n(r.fgGpuKb / 1024f, 6)
                 Text(line, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+            }
+        }
+    }
+}
+
+/** Per-app HUD switch + which metrics it shows in this app. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun HudCard(pkg: String) {
+    val hud by com.the412banner.batterylog.hud.HudStore.flow.collectAsStateWithLifecycle()
+    val metrics = hud.apps[pkg]
+    val on = metrics != null
+    SectionCard(
+        "HUD", Icons.Rounded.Speed, tint = LocalChartColors.current.temp,
+        subtitle = when {
+            !hud.enabled -> "HUD overlay is off in Settings"
+            on -> "Shows over this app"
+            else -> "Off for this app"
+        },
+        trailing = {
+            androidx.compose.material3.Switch(checked = on, onCheckedChange = { v ->
+                com.the412banner.batterylog.hud.HudStore.update { c ->
+                    val m = c.apps.toMutableMap()
+                    if (v) m[pkg] = com.the412banner.batterylog.hud.HudConfig.DEFAULT_METRICS else m.remove(pkg)
+                    // Switching it on for an app also turns the HUD itself on.
+                    c.copy(apps = m, enabled = if (v) true else c.enabled)
+                }
+            })
+        },
+    ) {
+        if (metrics != null) {
+            androidx.compose.foundation.layout.FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                com.the412banner.batterylog.hud.HudMetric.entries.forEach { m ->
+                    FilterChip(
+                        selected = m in metrics,
+                        onClick = {
+                            com.the412banner.batterylog.hud.HudStore.update { c ->
+                                val cur = c.apps[pkg] ?: return@update c
+                                val next = if (m in cur) cur - m else cur + m
+                                c.copy(apps = c.apps + (pkg to next))
+                            }
+                        },
+                        label = { Text(m.label) },
+                    )
+                }
             }
         }
     }
