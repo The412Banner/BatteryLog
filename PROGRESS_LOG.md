@@ -3,6 +3,7 @@
 Newest entry first. Times are US Eastern.
 
 ## Resume point
+- **v2.2.0 release IN PROGRESS (11-21 ~13:4x EST):** user "merge and make a new stable". main = merge d60b95b4 (feat/hud-overlay incl. feat/shizuku-mode; backup refs/backup/20261121/main-before-hud-overlay = 24a5de8a) + release commit df08da91 (vc 11 / 2.2.0). Merged app code == device-installed 42d83a41 (diff = LICENSE, README, fastlane only). Release run: see entry below.
 - **feat/hud-overlay (11-21):** 42d83a41 ("Add a game" picker, CI 44873722932 green) INSTALLED FIT + Elite 13:20 EST (user: "yes install it on both"; base.apk sha 082b44fb on both, no crash). HUD not tried in a game yet. Shizuku mode not tried (Shizuku not on FIT/Elite).
 - **v2.1.0 STABLE = Latest** (11-20 08:55 EST, tag -> d72fd40e = release run 44747786224; per-app monitoring). Pocket FIT runs 208cc13b (same code, versionName 2.0.0) -> its updater should offer 2.1.0 (not yet tried).
 - **v2.0.0 STABLE = Latest** (published 2026-11-16 19:30:20 EST, tag → 21cc13320fa02bdbbd69157d269441b4e2e86a16 = release run 43987268286 headSha); assets BatteryLog-v2.0.0-21cc1332.apk (sha256 b7917a08…, = .sha256, AOSP testkey a40da80a, vc 9) + .sha256; notes = release-notes/v2.0.0.md. main = 21cc1332 (+ log commits); backup refs/backup/20261116/main-before-redesign-2.0 = 0b7367d2.
@@ -11,6 +12,12 @@ Newest entry first. Times are US Eastern.
 
 ## Lessons learned (don't repeat these)
 - (none yet)
+
+## 2026-11-21 — v2.2.0 stable release (feat/hud-overlay -> main, IN PROGRESS)
+- User: "merge and make a new stable" (11-21 ~13:3x EST), after the picker build 42d83a41 was installed on FIT + Elite. User was told the HUD was not tried in a game and Shizuku mode not tried; decision recorded.
+- main had moved (fastlane 7c35f212, GPL-3.0 82dd3d5/24a5de8a) -> merge --no-ff d60b95b4 (only conflict PROGRESS_LOG, both kept); backup refs/backup/20261121/main-before-hud-overlay = 24a5de8a.
+- Release commit df08da91: versionCode 11 / 2.2.0, release-notes/v2.2.0.md, README (Root line, Shizuku paragraph, HUD section, Credits: Shizuku-API RikkaApps Apache-2.0).
+- Next: push main, dispatch release=true tag=v2.2.0 prerelease=false, assert headSha, verify tag/assets/sha/Latest/updater API.
 
 ## 2026-11-21 — HUD overlay over games (`feat/hud-overlay`, stacked on `feat/shizuku-mode`, IN PROGRESS)
 **Why:** user: "add a simple customizable hud overlay for apps to display metrics toggled on/off for specific games ... so it stays visible". Plan given in chat (overlay permission, metric list, per-game auto show, position/size/opacity).
