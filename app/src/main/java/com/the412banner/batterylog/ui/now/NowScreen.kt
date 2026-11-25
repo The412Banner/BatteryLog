@@ -98,6 +98,7 @@ data class NowUi(
 
 class NowViewModel(private val app: BatteryLogApp) : ViewModel() {
     @Volatile private var rates: Analysis.Rates? = null
+    @Volatile private var averages: com.the412banner.batterylog.Averages.Result? = null
     @Volatile private var ratesAt = 0L
     private val liveBuffer = ArrayDeque<BatteryInfo>()
 
@@ -108,7 +109,7 @@ class NowViewModel(private val app: BatteryLogApp) : ViewModel() {
                 liveBuffer.addLast(b)
                 while (liveBuffer.size > 1 && b.time - liveBuffer.first().time > 30 * 60_000L) liveBuffer.removeFirst()
             }
-            emit(LiveTick(b, Estimates.compute(b, rates)))
+            emit(LiveTick(b, Estimates.compute(b, rates, averages)))
             delay(2_000)
         }
     }.flowOn(Dispatchers.IO)
@@ -118,7 +119,9 @@ class NowViewModel(private val app: BatteryLogApp) : ViewModel() {
             val now = System.currentTimeMillis()
             val set = runCatching { app.logs.window(now - 24 * 3_600_000L) }.getOrDefault(SampleSet.EMPTY)
             if (now - ratesAt > 5 * 60_000L) {
-                rates = runCatching { Analysis.rates(app.logs.window(now - 14 * 86_400_000L)) }.getOrNull()
+                val weeks = runCatching { app.logs.window(now - 14 * 86_400_000L) }.getOrNull()
+                rates = weeks?.let { runCatching { Analysis.rates(it) }.getOrNull() }
+                averages = weeks?.let { runCatching { com.the412banner.batterylog.Averages.of(it) }.getOrNull() }
                 ratesAt = now
             }
             emit(set)
@@ -282,6 +285,7 @@ private fun Hero(ui: NowUi) {
                 if (e.charging) {
                     EstimateItem("Full in", Estimates.fmtMin(e.gaugeToFullMin), "system")
                     EstimateItem("Your average", Estimates.fmtMin(e.learnedToFullMin), e.rates?.chargePctPerH?.let { "%.0f %%/h".format(it) } ?: "learning")
+                    EstimateItem("Full charge", Estimates.fmtMin(e.learnedFullChargeMin), "0 → 100 %")
                 } else {
                     EstimateItem("Time left", Estimates.fmtMin(e.gaugeToEmptyMin), "system")
                     EstimateItem("Your average", Estimates.fmtMin(e.learnedRemainingMin), e.rates?.drainPctPerH?.let { "%.1f %%/h".format(it) } ?: "learning")

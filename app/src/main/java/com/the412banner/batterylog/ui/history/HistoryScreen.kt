@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BatteryChargingFull
+import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.ShowChart
 import androidx.compose.material.icons.rounded.TrendingDown
@@ -48,6 +49,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.the412banner.batterylog.Analysis
+import com.the412banner.batterylog.Averages
 import com.the412banner.batterylog.BatteryLogApp
 import com.the412banner.batterylog.Fmt
 import com.the412banner.batterylog.LogInfo
@@ -60,6 +62,9 @@ import com.the412banner.batterylog.ui.components.ChartState
 import com.the412banner.batterylog.ui.components.IconBadge
 import com.the412banner.batterylog.ui.components.LevelBar
 import com.the412banner.batterylog.ui.components.MiniStat
+import com.the412banner.batterylog.ui.components.SectionCard
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.the412banner.batterylog.ui.components.batteriesSub
 import com.the412banner.batterylog.ui.components.batteriesValue
 import com.the412banner.batterylog.ui.components.SectionLabel
@@ -132,6 +137,7 @@ data class HistoryUi(
     val set: SampleSet = SampleSet.EMPTY,
     val bands: List<LongRange> = emptyList(),
     val stats: WindowStats = WindowStats(),
+    val averages: Averages.Result = Averages.Result(),
     val runs: List<LogInfo> = emptyList(),
     val tempUnit: TempUnit = TempUnit.C,
     val activePath: String? = null,
@@ -162,11 +168,12 @@ class HistoryViewModel(private val app: BatteryLogApp) : ViewModel() {
             val range = _ui.value.range
             val runs = runCatching { app.logs.index() }.getOrDefault(emptyList())
             val set = runCatching { app.logs.window(System.currentTimeMillis() - range.ms) }.getOrDefault(SampleSet.EMPTY)
-            val stats = WindowStats.of(set)
-            val bands = Analysis.chargingBands(set)
+            val (stats, averages, bands) = withContext(Dispatchers.Default) {
+                Triple(WindowStats.of(set), Averages.of(set), Analysis.chargingBands(set))
+            }
             _ui.update {
                 it.copy(
-                    loading = false, set = set, bands = bands, stats = stats, runs = runs,
+                    loading = false, set = set, bands = bands, stats = stats, averages = averages, runs = runs,
                     activePath = com.the412banner.batterylog.BatteryLogService.currentLogPath,
                 )
             }
@@ -263,6 +270,7 @@ fun HistoryContent(
             }
         }
         item { StatsGrid(ui) }
+        item { AveragesCard(ui) }
         item { SectionLabel("Recorded logs") }
         if (ui.runs.isEmpty() && !ui.loading) {
             item {
@@ -301,6 +309,44 @@ private fun StatsGrid(ui: HistoryUi) {
                     Modifier.weight(1f),
                 )
                 MiniStat("Sessions", "${st.sessions}", Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun AveragesCard(ui: HistoryUi) {
+    val a = ui.averages
+    val c = LocalChartColors.current
+    val short = ui.range.ms < Range.D7.ms
+    SectionCard(
+        "Your averages", Icons.Rounded.Insights, tint = c.charging,
+        subtitle = when {
+            short -> "Pick 7 d or longer"
+            ui.loading -> "Loading…"
+            a.batteryMs + a.chargeMs < 3_600_000 -> "Needs more logs in this range"
+            else -> "From ${Fmt.duration(a.batteryMs)} on battery and ${Fmt.duration(a.chargeMs)} charging over ${a.days} ${if (a.days == 1) "day" else "days"}"
+        },
+    ) {
+        if (!short) {
+            fun dur(ms: Long?) = ms?.takeIf { it > 0 }?.let { Fmt.duration(it) } ?: "—"
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                MiniStat("Battery lasts", dur(a.fullRuntimeMs), Modifier.weight(1f), color = c.drain, sub = "100 → 0 %")
+                MiniStat("Full charge", dur(a.fullChargeMs), Modifier.weight(1f), color = c.charging, sub = "0 → 100 %")
+                MiniStat("Top-up", dur(a.topUpMs), Modifier.weight(1f), color = c.charging, sub = "20 → 80 %")
+            }
+            Spacer(Modifier.height(14.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                val perDay = a.usedPctPerDay?.let { Math.round(it).toInt() }
+                MiniStat("Used per day", perDay?.let { batteriesValue(it) } ?: "—", Modifier.weight(1f), sub = perDay?.let { batteriesSub(it) })
+                MiniStat("Charges / day", a.chargesPerDay?.let { "%.1f".format(it) } ?: "—", Modifier.weight(1f))
+                MiniStat("Longest stretch", dur(a.longestBatteryMs), Modifier.weight(1f), sub = "on battery")
+            }
+            Spacer(Modifier.height(14.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                MiniStat("Plug in at", a.plugInPct?.let { "$it %" } ?: "—", Modifier.weight(1f), sub = "average")
+                MiniStat("Unplug at", a.unplugPct?.let { "$it %" } ?: "—", Modifier.weight(1f), sub = "average")
+                MiniStat("Steps measured", "${a.measuredSteps} / ${Averages.STEPS}", Modifier.weight(1f), sub = "charge speed")
             }
         }
     }

@@ -34,12 +34,15 @@ It started as a tool to chase random shut-offs on the AYANEO Pocket FIT and work
 
 
 **Now**: an animated battery ring and the current state (charging, watts). Time left from the system
-estimate and from your own average. Live tiles for power, current, voltage and temperature, each with a
+estimate and from your own average (while charging also the full 0 → 100 % time). Live tiles for power, current, voltage and temperature, each with a
 30-minute trend line. A "since last charge" summary, the last 24 hours as a chart, and the logging controls.
 
 **History**: one large chart for 6 h, 24 h, 7 days, 30 days or 90 days, switchable between level, power,
 current, voltage and temperature. Charging periods are shaded. Below it: time on battery, % used and
 charged, drain rate, average power, lowest voltage, temperature range, and the list of every log.
+For 7 days or longer, **Your averages** shows how long a full charge lasts (100 → 0 %), how long a full
+charge takes (0 → 100 %, timed per 10 % step because charging slows near full) and a 20 → 80 % top-up,
+battery used and charges per day, the usual plug-in and unplug level, and the longest stretch on battery.
 
 **Log details**: synced charts for one log. Dragging on one chart shows the same moment on all of them,
 and zooming one zooms all. Below the charts: a report covering capacity used, measured full capacity,

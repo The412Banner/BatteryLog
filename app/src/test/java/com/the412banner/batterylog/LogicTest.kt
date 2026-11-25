@@ -101,6 +101,65 @@ class LogicTest {
         assertEquals(120_000L, bands[0].last)
     }
 
+    private fun chargeSample(b: SampleSet.Builder, t: Long, c: Int, st: Byte = SampleSet.ST_CHARGING) =
+        b.add(t, c, 4000, 2_000_000, 0, 300, st, SampleSet.PL_AC)
+
+    private fun drainSample(b: SampleSet.Builder, t: Long, c: Int) =
+        b.add(t, c, 4000, -1_500_000, 0, 300, SampleSet.ST_DISCHARGING, SampleSet.PL_UNPLUGGED)
+
+    @Test
+    fun averagesTimeChargingPerStep() {
+        // 1 min per % up to 80 %, 3 min per % above; the time spent full at 100 % does not count.
+        val b = SampleSet.Builder()
+        var t = 0L
+        for (c in 0..100) {
+            chargeSample(b, t, c)
+            if (c < 100) t += if (c < 80) 60_000 else 180_000
+        }
+        for (k in 1..3) chargeSample(b, t + k * 60_000L, 100, SampleSet.ST_FULL)
+        val a = Averages.of(b.build(), java.util.TimeZone.getTimeZone("UTC"))
+        assertEquals(10, a.measuredSteps)
+        assertEquals(80 * 60_000L + 20 * 180_000L, a.fullChargeMs)
+        assertEquals(60 * 60_000L, a.topUpMs)
+        val e = Estimates.Result(charging = true, capacity = 50, gaugeToEmptyMin = null, gaugeToFullMin = null, rates = null, averages = a)
+        assertEquals(30 + 60, e.learnedToFullMin)
+        assertEquals(140, e.learnedFullChargeMin)
+    }
+
+    @Test
+    fun averagesHowTheBatteryIsUsedAndCharged() {
+        // 90 -> 30 % on battery (4 min per %), charge 30 -> 80 % (1 min per %), then 80 -> 70 % on battery.
+        val b = SampleSet.Builder()
+        var t = 0L
+        for (c in 90 downTo 30) { drainSample(b, t, c); t += 240_000 }
+        for (c in 30..80) { chargeSample(b, t, c); t += 60_000 }
+        for (c in 80 downTo 70) { drainSample(b, t, c); t += 240_000 }
+        val a = Averages.of(b.build(), java.util.TimeZone.getTimeZone("UTC"))
+        assertEquals(1, a.days)
+        assertEquals(70, a.usedPct)
+        assertEquals(70.0, a.usedPctPerDay!!, 0.001)
+        assertEquals(1, a.plugIns)
+        assertEquals(1.0, a.chargesPerDay!!, 0.001)
+        assertEquals(30, a.plugInPct)
+        assertEquals(80, a.unplugPct)
+        assertEquals(60 * 240_000L, a.longestBatteryMs)
+        // 15 %/h -> 100 % lasts 6 h 40 min.
+        assertEquals(24_000_000.0, a.fullRuntimeMs!!.toDouble(), 1_000.0)
+        // Steps 30-79 % measured; the others take the speed of the nearest measured step.
+        assertEquals(5, a.measuredSteps)
+        assertEquals(100 * 60_000L, a.fullChargeMs)
+    }
+
+    @Test
+    fun averagesNeedThreeMeasuredSteps() {
+        val b = SampleSet.Builder()
+        for (c in 40..59) chargeSample(b, c * 60_000L, c)
+        val a = Averages.of(b.build())
+        assertEquals(2, a.measuredSteps)
+        assertNull(a.fullChargeMs)
+        assertNull(a.plugInPct)
+    }
+
     @Test
     fun versionsCompare() {
         val v = { s: String -> AppVersion.parse(s)!! }

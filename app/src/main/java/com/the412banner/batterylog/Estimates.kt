@@ -5,7 +5,8 @@ import java.io.File
 /**
  * Time-left / time-to-full. Two sources:
  *  - the fuel gauge's own estimate (time_to_empty_avg / time_to_full_now / time_to_full_avg in sysfs);
- *  - the learned average %/hour from the last 14 days of logs ([Analysis.rates]).
+ *  - the learned average %/hour from the last 14 days of logs ([Analysis.rates]); charging time comes from
+ *    the per-10 % charge speed ([Averages]) when enough of it was measured.
  */
 object Estimates {
 
@@ -17,13 +18,18 @@ object Estimates {
         val gaugeToEmptyMin: Int?,
         val gaugeToFullMin: Int?,
         val rates: Analysis.Rates?,
+        val averages: Averages.Result? = null,
     ) {
         val learnedRemainingMin: Int? get() =
             rates?.drainPctPerH?.takeIf { it > 0 }?.let { (capacity / it * 60).toInt() }
         val learnedFullRuntimeMin: Int? get() =
             rates?.drainPctPerH?.takeIf { it > 0 }?.let { (100.0 / it * 60).toInt() }
         val learnedToFullMin: Int? get() =
-            rates?.chargePctPerH?.takeIf { it > 0 }?.let { ((100 - capacity) / it * 60).toInt() }
+            averages?.chargeMs(capacity, 100)?.let { (it / 60_000).toInt() }
+                ?: rates?.chargePctPerH?.takeIf { it > 0 }?.let { ((100 - capacity) / it * 60).toInt() }
+        val learnedFullChargeMin: Int? get() =
+            averages?.fullChargeMs?.let { (it / 60_000).toInt() }
+                ?: rates?.chargePctPerH?.takeIf { it > 0 }?.let { (100 / it * 60).toInt() }
 
         /** Best single figure for the headline: the gauge when it has one, else the learned average. */
         val headlineMin: Int? get() =
@@ -59,7 +65,7 @@ object Estimates {
     /** Seconds; reject sentinels (-1, 0) and anything over 72 h. */
     private fun plausible(sec: Int): Boolean = sec in 60..(72 * 3600)
 
-    fun compute(info: BatteryInfo, rates: Analysis.Rates?): Result {
+    fun compute(info: BatteryInfo, rates: Analysis.Rates?, averages: Averages.Result? = null): Result {
         val (e, f) = gaugeTimes()
         return Result(
             charging = info.onCharger,
@@ -67,6 +73,7 @@ object Estimates {
             gaugeToEmptyMin = if (!info.onCharger) e else null,
             gaugeToFullMin = if (info.onCharger && info.capacityPct < 100) f else null,
             rates = rates,
+            averages = averages,
         )
     }
 
