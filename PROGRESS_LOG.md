@@ -3,6 +3,7 @@
 Newest entry first. Times are US Eastern.
 
 ## Resume point
+- **11-25 feat/averages 6108db86** (Your averages card + Now 0 -> 100): CI 45705356688 running; not installed; no release.
 - **v2.2.1 STABLE = Latest** (11-21 16:04:37 EST, tag -> 1c70d964a47387128a14b1449d0d1116ef79c1eb = release run 44949196346 headSha; HUD position/layout, auto overlay, sensor report, Android 16+ FPS, Honor fixes). Asset BatteryLog-v2.2.1-1c70d964.apk sha256 70d9debc… (= .sha256, signer a40da80a). INSTALLED on FIT + Elite 16:07 EST (user: "yes install 2.2.1 on both"; vc 15 / 2.2.1, base.apk sha 70d9debc both, no crash; FIT per-app recording continues). Orion #3214 submitted. Old feature branches deleted 11-21 (backup refs refs/backup/20261121/branch-*).
 - **11-21 15:4x EST pre-stable checks:** Elite HUD position test PASSED on pre3 (Calculator host: top-left frame [24,24], top center frame [141,24][939,68] = centered on 1080, middle+center vertical [466,805][613,1011], drag +150/+150 saved x/y 150 and frame moved 150; Android Settings hides app overlays = bad host). Friend pre3: GPU % works (24 %, report 18.7 % via gpubusy), GPU temp present; 'GPU —' = blocked GPU MHz, confusing -> label '— MHz'. FPS 0 in No Man's Sky on the Honor -> ROOT CAUSE: Android 16+ `dumpsys SurfaceFlinger --list` wraps names as RequestedLayerState{<name> parentId=…}; frames are on the unhashed 'pkg/Activity#N' buffer layer (Elite scroll test: 126 rows, 144 Hz), the hashed container shows zeros. Fix ca15e479 (sfLayerName + prefer unhashed layer, test with real Elite list) + MHz label; CI 44948207626. Elite restored after test (HUD off, apps {}, pos 0, per-app off, appop default). NEXT: stable 2.2.1 (user said "make a new stable").
 - **v2.2.1-pre3 PRE-RELEASE (11-21 15:38:03 EST)** on feat/hud-auto-overlay: tag -> e67dedca (== built, run 44946754352), asset BatteryLog-v2.2.1-pre3-e67dedca.apk sha256 e25bc83e… (== .sha256, signer a40da80a), not Latest. INSTALLED FIT + Elite 15:39 EST (user: "yes publish pre3 when green and install on both"; vc 14, no crash). Adds HUD 3x3 position + Horizontal/Vertical (436e77ac) + idle gpubusy = 0 % (007a9b42). USER 15:4x: "make a new stable" -> NEXT: Elite HUD position test, then merge to main + v2.2.1 stable. User decision 15:4x: keep package name (no com.batterylog). Repo description set.
@@ -16,6 +17,13 @@ Newest entry first. Times are US Eastern.
 
 ## Lessons learned (don't repeat these)
 - (none yet)
+
+## 2026-11-25 — Your averages card (`feat/averages`, IN PROGRESS)
+- Why: user ~16:3x EST: "can we add somewhere a general time to 0 percent, average full 100 percent charge time, stuff like that?" Plan given (History card following 7/30/90 d + Now 0 -> 100 while charging); user: "yes go ahead, do all of it".
+- Existing before: Now showed "Your average" time left + "Full charge 100 -> 0 %" only on battery (Analysis.rates over 14 days, linear %/h); no 0 -> 100 figure anywhere.
+- Built 6108db86 (off main c390fc00): Averages.kt (per-10 % charge speed, excluding full/not-charging samples; missing steps take the nearest measured step; >= 3 steps needed; used % and plug-ins per logged calendar day; average plug-in/unplug level; longest stretch on battery). History "Your averages" card (6 h / 24 h: "Pick 7 d or longer"), stats now off the main thread. Now: "Full charge 0 -> 100 %" while charging; time to full uses the per-step speed when available. README updated. 3 new LogicTest cases.
+- CI: run 45705356688 (dispatched, headSha 6108db86).
+- Device test: NOT yet. Install only after the user's yes. No release without the user's word.
 
 ## 2026-11-21 — v2.2.1 stable release (feat/hud-auto-overlay -> main, DONE)
 - User: "make a new stable" (~15:4x EST), then "yes install on elite and test, then make stable".
